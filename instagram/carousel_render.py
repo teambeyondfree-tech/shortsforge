@@ -130,32 +130,42 @@ def _render_cover(slide: dict, canvas: Image.Image, genre: str) -> Image.Image:
     # ── 상단 굵은 accent 바 (20px)
     draw.rectangle([0, 0, W, 20], fill=accent)
 
-    # ── 장르 뱃지 (상단 바 바로 아래, 좌측)
-    gf  = _get_font(26)
-    gw  = int(len(genre) * 26 * 0.95) + 36
-    draw.rectangle([PAD, 36, PAD + gw, 84], fill=accent)
-    draw.text((PAD + 18, 44), genre, font=gf, fill=(255, 255, 255))
+    # ── 콘텐츠 블록 전체 높이 계산 → 수직 중앙 정렬
+    BADGE_H  = 50    # 장르 뱃지
+    BADGE_GAP = 28
+    fh       = _get_font(76, bold=True)
+    fs       = _get_font(36)
+    lines    = _wrap(heading, 76, W - PAD * 2)
+    lh       = 92
+    title_h  = len(lines) * lh
+    line_h   = 12    # 언더라인
+    LINE_GAP = 18
+    sub_h    = 44 if sub else 0
+    total_h  = BADGE_H + BADGE_GAP + title_h + LINE_GAP + line_h + (LINE_GAP + sub_h if sub else 0)
 
-    # ── 메인 제목 (큼직하게, 좌정렬, 중앙보다 약간 위)
-    fh    = _get_font(76, bold=True)
-    lines = _wrap(heading, 76, W - PAD * 2)
-    lh    = 92
-    y     = H // 2 - (len(lines) * lh) // 2 - 60
+    y = 30 + max(0, (H - 30 - 90 - total_h) // 2)
 
+    # ── 장르 뱃지 (제목 바로 위)
+    gf = _get_font(26)
+    gw = int(len(genre) * 26 * 0.95) + 36
+    draw.rectangle([PAD, y, PAD + gw, y + BADGE_H], fill=accent)
+    draw.text((PAD + 18, y + 10), genre, font=gf, fill=(255, 255, 255))
+    y += BADGE_H + BADGE_GAP
+
+    # ── 메인 제목
     for line in lines:
         draw.text((PAD, y), line, font=fh, fill=DARK)
         y += lh
 
-    # ── 제목 아래 accent 굵은 선
-    draw.rectangle([PAD, y + 14, PAD + 240, y + 22], fill=accent)
+    # ── accent 굵은 선
+    y += LINE_GAP
+    draw.rectangle([PAD, y, PAD + 240, y + line_h], fill=accent)
+    y += line_h
 
     # ── 부제목
     if sub:
-        fs = _get_font(36)
-        draw.text((PAD, y + 38), sub, font=fs, fill=GRAY)
-        y += 38 + 44
-    else:
-        y += 22 + 20
+        y += LINE_GAP
+        draw.text((PAD, y), sub, font=fs, fill=GRAY)
 
     # ── 하단 accent 바 + 인디케이터
     draw.rectangle([0, H - 16, W, H], fill=accent)
@@ -185,28 +195,40 @@ def _render_content(slide: dict, num: int, total: int,
     badge_num   = parts[0] if parts and parts[0].isdigit() else str(num - 1)
     badge_title = parts[1] if len(parts) > 1 and parts[0].isdigit() else heading
 
-    # ── 큰 번호 (accent 색, 좌상단 — 배경처럼 크게)
-    fnum = _get_font(130, bold=True)
-    draw.text((PAD, 38), badge_num, font=fnum, fill=atext)
+    # ── 콘텐츠 블록 전체 높이 계산 → 수직 중앙 정렬
+    NUM_H    = 126    # 큰 번호 높이
+    NUM_GAP  = 20
+    fh       = _get_font(58, bold=True)
+    fb       = _get_font(40)
+    t_lines  = _wrap(badge_title, 58, W - PAD * 2)
+    b_lines  = _wrap(body, 40, W - PAD * 2) if body else []
+    title_h  = len(t_lines) * 72
+    body_h   = len(b_lines) * 57
+    div_h    = 3 + 32    # 구분선 + 여백
+    total_h  = NUM_H + NUM_GAP + title_h + 24 + div_h + body_h
+
+    # 사용 가능한 영역: 상단(80) ~ 하단 도트(H-90)
+    y = 80 + max(0, (H - 90 - 80 - total_h) // 2)
+
+    # ── 큰 번호
+    fnum = _get_font(110, bold=True)
+    draw.text((PAD, y), badge_num, font=fnum, fill=atext)
+    y += NUM_H + NUM_GAP
 
     # ── 제목
-    y  = 200
-    fh = _get_font(58, bold=True)
-    for line in _wrap(badge_title, 58, W - PAD * 2):
+    for line in t_lines:
         draw.text((PAD, y), line, font=fh, fill=DARK)
         y += 72
 
     # ── 구분선
     y += 16
     draw.rectangle([PAD, y, PAD + 180, y + 3], fill=accent)
-    y += 24
+    y += div_h
 
     # ── 본문
-    if body:
-        fb = _get_font(40)
-        for line in _wrap(body, 40, W - PAD * 2):
-            draw.text((PAD, y), line, font=fb, fill=GRAY)
-            y += 57
+    for line in b_lines:
+        draw.text((PAD, y), line, font=fb, fill=GRAY)
+        y += 57
 
     # ── 하단 도트
     _dots(draw, W // 2, H - 60, total, num - 1, accent)
