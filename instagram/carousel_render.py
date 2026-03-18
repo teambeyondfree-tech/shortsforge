@@ -303,58 +303,50 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
 
     # 배경
     bg     = _fetch_ai_bg(th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
-    canvas = _dark_overlay(bg, opacity=168)
+    canvas = _dark_overlay(bg, opacity=172)
 
-    # 워터마크
-    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=18)
+    # 워터마크 (매우 은은하게)
+    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=12)
 
     draw = ImageDraw.Draw(canvas)
 
-    # ── 폰트 정의
-    f_pill  = _get_font(22, "bold")
-    f_hook  = _get_font(30, "regular")
-    f_main  = _get_font(80, "xbold")
-    f_sub   = _get_font(32, "regular")
-    f_swipe = _get_font(26, "regular")
+    # ── 폰트 (3가지만)
+    f_tag  = _get_font(20, "bold")      # 장르 태그
+    f_main = _get_font(88, "xbold")     # 메인 헤드라인
+    f_sub  = _get_font(30, "regular")   # 서브타이틀
 
-    LH_MAIN = int(80 * 1.28)   # 102
+    LH_MAIN = int(88 * 1.18)            # 104px
 
     mlines = _wrap(heading, f_main, CONTENT, max_lines=2)
     slines = _wrap(sub, f_sub, CONTENT, max_lines=1) if sub else []
 
-    # 전체 블록 높이 계산
-    hook_h  = 38 + 24           # 훅 텍스트 + 아래 여백
-    main_h  = len(mlines) * LH_MAIN
-    div_h   = 4 + 28            # 강조선 + 여백
-    sub_h   = (int(32 * 1.3) if slines else 0)
-    blk_h   = hook_h + main_h + div_h + sub_h
-    y       = (CANVAS - blk_h) // 2
+    # ── 블록 높이 계산 (요소: 태그 + 간격 + 헤드라인 + 구분선 + 서브)
+    tag_h  = 20 + 20          # 태그 텍스트 + 아래 gap
+    main_h = len(mlines) * LH_MAIN
+    div_h  = 24 + 3 + 20      # gap + 선 + gap
+    sub_h  = int(30 * 1.3) if slines else 0
+    blk_h  = tag_h + main_h + div_h + sub_h
 
-    # 장르 pill (최상단)
-    _draw_pill(draw, CANVAS // 2, PAD // 2 + 14,
-               genre, f_pill, th["pill_bg"], th["pill_text"])
+    y = (CANVAS - blk_h) // 2
 
-    # 훅 프리헤드라인 (메인 위)
-    hook_txt = f"{th['hook_icon']}  저장각 콘텐츠"
-    _draw_c(draw, y, hook_txt, f_hook, th["accent"])
-    y += hook_h
+    # 1. 장르 태그 (작게, accent, 센터)
+    tag_txt = f"· {genre} ·"
+    _draw_c(draw, y, tag_txt, f_tag, th["accent"])
+    y += tag_h
 
-    # 메인 제목
+    # 2. 메인 헤드라인
     for line in mlines:
         _draw_c(draw, y, line, f_main, th["text"])
         y += LH_MAIN
 
-    # 강조선
-    y += 16
-    _draw_accent_line(draw, y, 80, th["accent"], thickness=4)
-    y += 4 + 20
+    # 3. 얇은 구분선
+    y += 24
+    _draw_accent_line(draw, y, 56, th["accent"], thickness=3)
+    y += 3 + 20
 
-    # 서브텍스트
+    # 4. 서브타이틀
     if slines:
         _draw_c(draw, y, slines[0], f_sub, th["sub"])
-
-    # 스와이프 유도 (하단)
-    _draw_swipe_arrow(draw, CANVAS - PAD + 14, th["sub"], th["accent"], f_swipe)
 
     return canvas
 
@@ -459,51 +451,51 @@ def _render_content(slide: dict, num: int, total: int, genre: str) -> Image.Imag
 def _render_cta(slide: dict, genre: str) -> Image.Image:
     th      = GENRE_THEME.get(genre, _DEFAULT)
     canvas  = Image.new("RGB", (CANVAS, CANVAS), th["cta"])
+
+    # 워터마크 (은은하게)
+    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=10)
+
     draw    = ImageDraw.Draw(canvas)
     heading = _strip_emoji(slide.get("heading", "저장하고 나중에 보세요"))
     body    = _strip_emoji(slide.get("body", "") or "")
 
-    f_sym  = _get_font(72, "xbold")
-    f_main = _get_font(66, "xbold")
-    f_sub  = _get_font(30, "regular")
-    f_fol  = _get_font(26, "bold")
+    f_main = _get_font(64, "xbold")
+    f_sub  = _get_font(28, "regular")
+    f_pill = _get_font(24, "bold")
 
-    LH_MAIN = int(66 * 1.28)
+    LH_MAIN = int(64 * 1.2)
 
     mlines = _wrap(heading, f_main, CONTENT, max_lines=2)
     slines = _wrap(body,    f_sub,  CONTENT, max_lines=1) if body else []
 
-    sym = th["hook_icon"]
-    sw, _ = _measure(sym, f_sym)
+    # 블록 높이: 상단 라인 + 헤드라인 + 구분 + 서브 + 필 버튼
+    line_h   = 3 + 36
+    main_h   = len(mlines) * LH_MAIN
+    sub_h    = (24 + int(28 * 1.3) if slines else 0)
+    pill_h   = 44 + 52
+    blk_h    = line_h + main_h + sub_h + pill_h
+    y        = (CANVAS - blk_h) // 2
 
-    sep_h = 3
-    blk_h = (72 + 32            # 심볼 + 아래 여백
-             + len(mlines) * LH_MAIN
-             + (28 + sep_h + 24 + int(30 * 1.3) if slines else 0)
-             + (40 + 36 if True else 0))   # 팔로우 유도
-    y = (CANVAS - blk_h) // 2
+    # 1. 상단 accent 라인 (56px, 심볼 대신)
+    _draw_accent_line(draw, y, 56, th["accent"], thickness=3)
+    y += line_h
 
-    # 심볼
-    draw.text(((CANVAS - sw) // 2, y), sym, font=f_sym, fill=th["accent"])
-    y += 72 + 32
-
-    # 메인 CTA
+    # 2. 메인 CTA 헤드라인
     for line in mlines:
         _draw_c(draw, y, line, f_main, th["text"])
         y += LH_MAIN
 
+    # 3. 서브텍스트
     if slines:
-        y += 28
-        _draw_accent_line(draw, y, int(CONTENT * 0.35), th["sub"], thickness=sep_h)
-        y += sep_h + 24
+        y += 24
         _draw_c(draw, y, slines[0], f_sub, th["sub"])
-        y += int(30 * 1.3)
+        y += int(28 * 1.3)
 
-    # 팔로우 유도
-    y += 40
-    fol_txt = "팔로우하고 매일 받아보기"
-    _draw_pill(draw, CANVAS // 2, y + 18,
-               fol_txt, f_fol, th["accent"], th["solid"], pad_x=32, pad_y=14)
+    # 4. 팔로우 pill 버튼
+    y += 44
+    _draw_pill(draw, CANVAS // 2, y + 26,
+               "팔로우하고 매일 받아보기", f_pill,
+               th["accent"], th["solid"], pad_x=36, pad_y=16)
 
     return canvas
 
