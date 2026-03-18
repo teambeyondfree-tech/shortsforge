@@ -1,0 +1,7 @@
+google-genai>=0.8.0
+ffmpeg-python
+streamlit>=1.32.0
+python-dotenv
+Pillow
+requests
+numpy
