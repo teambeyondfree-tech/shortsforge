@@ -340,7 +340,6 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
     bg = _fetch_ai_bg(heading, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
     # 좌측 그라디언트 오버레이: 텍스트 영역(좌)은 어둡게, 이미지(우)는 살짝 보이게
     canvas = _gradient_overlay(bg, (0, 0, 0), opacity=205)
-    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=8)
 
     draw = ImageDraw.Draw(canvas)
 
@@ -489,9 +488,6 @@ def _render_cta(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Image:
     body    = _strip_emoji(slide.get("body", "") or "")
     bg      = _fetch_ai_bg(f"{heading} {body}", th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
     canvas  = _dark_overlay(bg, opacity=215)
-
-    # 워터마크 (은은하게)
-    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=8)
 
     draw = ImageDraw.Draw(canvas)
 
