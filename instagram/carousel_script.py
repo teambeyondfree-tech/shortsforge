@@ -151,7 +151,33 @@ JSON 형식으로만 응답:
     if not match:
         raise ValueError(f"JSON 파싱 실패: {raw[:300]}")
 
-    data = json.loads(match.group())
+    json_str = match.group()
+    # 문자열 값 내부의 실제 줄바꿈·탭 등 제어문자를 이스케이프로 변환
+    def _fix_control_chars(s: str) -> str:
+        result = []
+        in_string = False
+        escape = False
+        for ch in s:
+            if escape:
+                result.append(ch)
+                escape = False
+            elif ch == '\\':
+                result.append(ch)
+                escape = True
+            elif ch == '"':
+                result.append(ch)
+                in_string = not in_string
+            elif in_string and ch == '\n':
+                result.append('\\n')
+            elif in_string and ch == '\r':
+                result.append('\\r')
+            elif in_string and ch == '\t':
+                result.append('\\t')
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    data = json.loads(_fix_control_chars(json_str))
 
     # 팔레트 주입
     palettes = SLIDE_COLOR_PALETTES.get(genre, SLIDE_COLOR_PALETTES["교육/지식"])

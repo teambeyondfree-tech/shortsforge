@@ -146,12 +146,36 @@ JSON 형식으로만 응답하세요 (다른 텍스트 없이):
     response = _retry_api_call(_call)
 
     raw = response.text.strip()
-    # JSON 블록만 추출
     match = re.search(r'\{[\s\S]*\}', raw)
     if not match:
         raise ValueError(f"JSON 파싱 실패: {raw[:200]}")
 
-    result = json.loads(match.group())
+    # 문자열 내부 제어문자 이스케이프 처리
+    def _fix_control_chars(s: str) -> str:
+        result = []
+        in_string = False
+        escape = False
+        for ch in s:
+            if escape:
+                result.append(ch)
+                escape = False
+            elif ch == '\\':
+                result.append(ch)
+                escape = True
+            elif ch == '"':
+                result.append(ch)
+                in_string = not in_string
+            elif in_string and ch == '\n':
+                result.append('\\n')
+            elif in_string and ch == '\r':
+                result.append('\\r')
+            elif in_string and ch == '\t':
+                result.append('\\t')
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    result = json.loads(_fix_control_chars(match.group()))
     return result
 
 
