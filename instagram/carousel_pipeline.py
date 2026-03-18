@@ -44,8 +44,8 @@ def run(
         print(f"  제목: {title} / 슬라이드: {len(slides)}개")
 
         # 2. 슬라이드 렌더링
-        progress("슬라이드 이미지 렌더링 중...", 0.30)
-        slide_paths = render_all_slides(slides, job_dir)
+        progress("슬라이드 이미지 렌더링 중... (AI 배경 생성 중)", 0.30)
+        slide_paths = render_all_slides(slides, job_dir, genre=genre)
         progress(f"{len(slide_paths)}개 슬라이드 완성", 0.85)
 
         # 3. ZIP 패키징
