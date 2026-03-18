@@ -198,25 +198,60 @@ def _diag_gradient(colors: list) -> Image.Image:
     return Image.fromarray(arr.astype(np.uint8), "RGB")
 
 
-def _fetch_ai_bg(prompt: str, grad: list) -> Image.Image:
+def _fetch_ai_bg(heading: str, genre_prompt: str, grad: list) -> Image.Image:
+    """슬라이드 제목 기반으로 배경 이미지 생성"""
     try:
         import config
         from google import genai
         client = genai.Client(api_key=config.GEMINI_API_KEY)
+        # 제목 내용을 프롬프트에 반영
+        prompt = (
+            f"{heading} concept, {genre_prompt}, "
+            "square 1:1, cinematic photography, dark moody atmosphere, "
+            "no text, no letters, no people, blurred bokeh background, ultra quality"
+        )
         resp = client.models.generate_images(
             model="imagen-4.0-fast-generate-001",
-            prompt=f"{prompt}, square 1:1, dark moody, no text, no people, ultra quality",
+            prompt=prompt,
             config={"number_of_images": 1, "aspect_ratio": "1:1"},
         )
         img_bytes = resp.generated_images[0].image.image_bytes
-        return Image.open(io.BytesIO(img_bytes)).convert("RGB").resize((CANVAS, CANVAS))
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB").resize((CANVAS, CANVAS))
+        # 블러 처리 — 텍스트 가독성 확보
+        from PIL import ImageFilter
+        img = img.filter(ImageFilter.GaussianBlur(radius=6))
+        return img
     except Exception as e:
         print(f"  [AI 배경 fallback] {e}")
         return _diag_gradient(grad)
 
 
-def _dark_overlay(bg: Image.Image, opacity: int = 165) -> Image.Image:
+def _dark_overlay(bg: Image.Image, opacity: int = 195) -> Image.Image:
+    """단순 다크 오버레이"""
     ov = Image.new("RGBA", bg.size, (0, 0, 0, opacity))
+    return Image.alpha_composite(bg.convert("RGBA"), ov).convert("RGB")
+
+
+def _gradient_overlay(bg: Image.Image, solid_color: tuple, opacity: int = 180) -> Image.Image:
+    """
+    좌측 절반은 단색 오버레이(텍스트 영역), 우측은 점점 투명해지는 그라디언트 오버레이.
+    텍스트는 왼쪽에, 이미지는 오른쪽에서 보이는 효과.
+    """
+    W, H = bg.size
+    arr = np.zeros((H, W, 4), dtype=np.uint8)
+    r, g, b = solid_color
+    # x축 기준: 0 → opacity, W//2 이후 → opacity/2 로 선형 감소
+    for xi in range(W):
+        if xi < W // 2:
+            a = opacity
+        else:
+            ratio = (xi - W // 2) / (W // 2)
+            a = int(opacity * (1 - ratio * 0.45))
+        arr[:, xi, 0] = r
+        arr[:, xi, 1] = g
+        arr[:, xi, 2] = b
+        arr[:, xi, 3] = a
+    ov = Image.fromarray(arr, "RGBA")
     return Image.alpha_composite(bg.convert("RGBA"), ov).convert("RGB")
 
 
@@ -301,52 +336,47 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
     heading = _strip_emoji(slide.get("heading", ""))
     sub     = _strip_emoji(slide.get("subtitle", "") or "")
 
-    # 배경
-    bg     = _fetch_ai_bg(th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
-    canvas = _dark_overlay(bg, opacity=172)
-
-    # 워터마크 (매우 은은하게)
-    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=12)
+    # 배경 — 슬라이드 제목 기반으로 생성
+    bg = _fetch_ai_bg(heading, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
+    # 좌측 그라디언트 오버레이: 텍스트 영역(좌)은 어둡게, 이미지(우)는 살짝 보이게
+    canvas = _gradient_overlay(bg, (0, 0, 0), opacity=205)
+    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=8)
 
     draw = ImageDraw.Draw(canvas)
 
-    # ── 폰트 (3가지만)
-    f_tag  = _get_font(20, "bold")      # 장르 태그
-    f_main = _get_font(88, "xbold")     # 메인 헤드라인
-    f_sub  = _get_font(30, "regular")   # 서브타이틀
+    f_main = _get_font(90, "xbold")
+    f_sub  = _get_font(30, "regular")
+    f_tag  = _get_font(18, "bold")
 
-    LH_MAIN = int(88 * 1.18)            # 104px
+    LH_MAIN = int(90 * 1.16)   # 104px
 
     mlines = _wrap(heading, f_main, CONTENT, max_lines=2)
     slines = _wrap(sub, f_sub, CONTENT, max_lines=1) if sub else []
 
-    # ── 블록 높이 계산 (요소: 태그 + 간격 + 헤드라인 + 구분선 + 서브)
-    tag_h  = 20 + 20          # 태그 텍스트 + 아래 gap
+    # 좌측 accent 세로선 + 블록 세로 중앙 정렬
+    # 전체 블록: 헤드라인 + 서브
     main_h = len(mlines) * LH_MAIN
-    div_h  = 24 + 3 + 20      # gap + 선 + gap
-    sub_h  = int(30 * 1.3) if slines else 0
-    blk_h  = tag_h + main_h + div_h + sub_h
+    sub_h  = (20 + int(30 * 1.2)) if slines else 0
+    blk_h  = main_h + sub_h
+    y      = (CANVAS - blk_h) // 2
+    x      = PAD   # 좌측 정렬 기준
 
-    y = (CANVAS - blk_h) // 2
+    # 좌측 accent 세로선 (헤드라인 높이만큼)
+    bar_x = x - 16
+    draw.rectangle([bar_x, y, bar_x + 4, y + main_h], fill=th["accent"])
 
-    # 1. 장르 태그 (작게, accent, 센터)
-    tag_txt = f"· {genre} ·"
-    _draw_c(draw, y, tag_txt, f_tag, th["accent"])
-    y += tag_h
-
-    # 2. 메인 헤드라인
+    # 메인 헤드라인 (좌측 정렬)
     for line in mlines:
-        _draw_c(draw, y, line, f_main, th["text"])
+        draw.text((x, y), line, font=f_main, fill=th["text"])
         y += LH_MAIN
 
-    # 3. 얇은 구분선
-    y += 24
-    _draw_accent_line(draw, y, 56, th["accent"], thickness=3)
-    y += 3 + 20
-
-    # 4. 서브타이틀
+    # 서브타이틀
     if slines:
-        _draw_c(draw, y, slines[0], f_sub, th["sub"])
+        y += 20
+        draw.text((x, y), slines[0], font=f_sub, fill=th["sub"])
+
+    # 장르 태그 (좌하단)
+    draw.text((PAD, CANVAS - PAD + 16), genre, font=f_tag, fill=th["accent"])
 
     return canvas
 
@@ -397,13 +427,14 @@ def _render_content(slide: dict, num: int, total: int, genre: str) -> Image.Imag
     y = (CANVAS - blk) // 2
 
     draw = ImageDraw.Draw(canvas)
+    x = PAD  # 좌측 정렬 기준
 
     # 슬라이드 번호 (우상단)
     draw.text((CANVAS - PAD - 70, PAD // 2 + 4),
               f"{num} / {total}", font=f_sm, fill=th["sub"])
 
-    # 원형 번호 배지
-    bcx = CANVAS // 2
+    # 원형 번호 배지 (좌측 정렬)
+    bcx = x + badge_r
     bcy = y + badge_r
     draw.ellipse([bcx - badge_r, bcy - badge_r, bcx + badge_r, bcy + badge_r],
                  fill=th["accent"])
@@ -413,32 +444,31 @@ def _render_content(slide: dict, num: int, total: int, genre: str) -> Image.Imag
               font=f_badge, fill=th["solid"])
     y += badge_h + 24
 
-    # 제목
+    # 제목 (좌측 정렬)
     for line in hlines:
-        _draw_c(draw, y, line, f_h, th["text"])
+        draw.text((x, y), line, font=f_h, fill=th["text"])
         y += LH_H
 
     # 하이라이트 (좌측 강조선 + accent 색)
     if hllines:
         y += 28
         bar_h = len(hllines) * LH_HL
-        draw.rectangle([PAD, y, PAD + 4, y + bar_h], fill=th["accent"])
+        draw.rectangle([x, y, x + 4, y + bar_h], fill=th["accent"])
         for line in hllines:
-            _draw_c(draw, y, line, f_hl, th["accent"])
+            draw.text((x + 20, y), line, font=f_hl, fill=th["accent"])
             y += LH_HL
 
-    # 본문
+    # 본문 (좌측 정렬)
     if blines:
         y += 16
         for line in blines:
-            _draw_c(draw, y, line, f_b, th["sub"])
+            draw.text((x, y), line, font=f_b, fill=th["sub"])
             y += LH_B
 
-    # 하단 진행 도트
+    # 하단 진행 도트 (중앙)
     dot_r = 5
     dot_gap = 10
     dot_y = CANVAS - PAD // 2
-    content_slides = total - 2  # cover, cta 제외 추정
     _draw_progress_dots(draw, max(1, num - 1), max(1, total - 2),
                         dot_y, dot_r, dot_gap,
                         th["accent"], (*th["sub"][:3],) if len(th["sub"]) >= 3 else th["sub"])
