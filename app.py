@@ -265,10 +265,9 @@ with tab_carousel:
 
         except Exception as e:
             progress.empty()
+            import traceback
             st.error(f"오류 발생: {e}")
-            with st.expander("오류 상세"):
-                import traceback
-                st.code(traceback.format_exc())
+            st.code(traceback.format_exc())
 
 
 # ═══════════════════════════════════════════

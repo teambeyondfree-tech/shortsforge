@@ -18,16 +18,25 @@ _BASE      = Path(__file__).parent.parent
 _FONT_BOLD = _BASE / "assets" / "fonts" / "malgunbd.ttf"
 _FONT_NORM = _BASE / "assets" / "fonts" / "malgun.ttf"
 
+# Linux(Streamlit Cloud) Nanum 폰트 fallback
+_NANUM_BOLD = Path("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf")
+_NANUM_NORM = Path("/usr/share/fonts/truetype/nanum/NanumGothic.ttf")
+
 
 # ── 유틸 ─────────────────────────────────────────────────────────────
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    path = _FONT_BOLD if bold else _FONT_NORM
-    if path.exists():
-        try:
-            return ImageFont.truetype(str(path), size)
-        except Exception:
-            pass
+    candidates = (
+        [_FONT_BOLD, _NANUM_BOLD] if bold
+        else [_FONT_NORM, _NANUM_NORM]
+    )
+    for path in candidates:
+        if path.exists():
+            try:
+                return ImageFont.truetype(str(path), size)
+            except Exception:
+                continue
+    # 마지막 수단 — 기본 비트맵 폰트
     return ImageFont.load_default()
 
 
