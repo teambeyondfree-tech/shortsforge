@@ -383,21 +383,26 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
 
 # ── Template B: 정보형 콘텐츠 ─────────────────────────────────────────
 
-def _render_content(slide: dict, num: int, total: int, genre: str) -> Image.Image:
+def _render_content(slide: dict, num: int, total: int, genre: str, use_ai_bg: bool = True) -> Image.Image:
     th      = GENRE_THEME.get(genre, _DEFAULT)
-    canvas  = Image.new("RGB", (CANVAS, CANVAS), th["solid"])
+    heading = _strip_emoji(slide.get("heading", ""))
+    body    = _strip_emoji(slide.get("body", "") or "")
+    # 슬라이드 내용 기반 배경 생성
+    content_prompt = f"{heading} {body}"
+    bg     = _fetch_ai_bg(content_prompt, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
+    canvas = _dark_overlay(bg, opacity=210)
     heading = _strip_emoji(slide.get("heading", ""))
     body    = _strip_emoji(slide.get("body", "") or "")
 
     # 큰 따옴표 배경 장식
-    _draw_big_quote(canvas, th["accent"], opacity=20)
+    _draw_big_quote(canvas, th["accent"], opacity=15)
 
-    # 번호 파싱
+    # 번호 파싱 (heading은 위에서 이미 선언됨)
     parts   = heading.split(" ", 1)
     num_str = parts[0] if parts and parts[0].isdigit() else str(num - 1)
     title   = parts[1] if len(parts) > 1 and parts[0].isdigit() else heading
 
-    # 문장 분리
+    # 문장 분리 (body는 위에서 이미 선언됨)
     sentences = re.split(r"(?<=[.?!。])\s*", body.strip()) if body else []
     highlight = sentences[0] if sentences else ""
     rest_body = " ".join(sentences[1:]) if len(sentences) > 1 else ""
@@ -478,16 +483,17 @@ def _render_content(slide: dict, num: int, total: int, genre: str) -> Image.Imag
 
 # ── Template C: CTA형 ─────────────────────────────────────────────────
 
-def _render_cta(slide: dict, genre: str) -> Image.Image:
+def _render_cta(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Image:
     th      = GENRE_THEME.get(genre, _DEFAULT)
-    canvas  = Image.new("RGB", (CANVAS, CANVAS), th["cta"])
-
-    # 워터마크 (은은하게)
-    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=10)
-
-    draw    = ImageDraw.Draw(canvas)
     heading = _strip_emoji(slide.get("heading", "저장하고 나중에 보세요"))
     body    = _strip_emoji(slide.get("body", "") or "")
+    bg      = _fetch_ai_bg(f"{heading} {body}", th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
+    canvas  = _dark_overlay(bg, opacity=215)
+
+    # 워터마크 (은은하게)
+    _draw_wm(canvas, th["wm_word"], th["accent"], opacity=8)
+
+    draw = ImageDraw.Draw(canvas)
 
     f_main = _get_font(64, "xbold")
     f_sub  = _get_font(28, "regular")
@@ -545,9 +551,9 @@ def render_all_slides(
         if s_type == "cover":
             canvas = _render_cover(slide, genre, use_ai_bg=use_ai_bg)
         elif s_type == "cta":
-            canvas = _render_cta(slide, genre)
+            canvas = _render_cta(slide, genre, use_ai_bg=use_ai_bg)
         else:
-            canvas = _render_content(slide, i, total, genre)
+            canvas = _render_content(slide, i, total, genre, use_ai_bg=use_ai_bg)
 
         out = job_dir / f"slide_{i:02d}.png"
         canvas.save(out, "PNG")
