@@ -15,12 +15,12 @@ CAROUSEL_W = 1080
 CAROUSEL_H = 1350
 
 import sys as _sys
-if _sys.platform == "win32":
-    FONT_BOLD   = "C:/Windows/Fonts/malgunbd.ttf"
-    FONT_NORMAL = "C:/Windows/Fonts/malgun.ttf"
-else:
-    FONT_BOLD   = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
-    FONT_NORMAL = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
+from pathlib import Path as _Path
+
+# 번들 폰트 (레포 내 assets/fonts) 우선 사용 → 어느 플랫폼에서도 동일하게 작동
+_BASE = _Path(__file__).parent.parent / "assets" / "fonts"
+FONT_BOLD   = str(_BASE / "malgunbd.ttf")
+FONT_NORMAL = str(_BASE / "malgun.ttf")
 
 
 def _strip_emoji(text: str) -> str:
