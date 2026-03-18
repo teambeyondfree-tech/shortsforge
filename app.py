@@ -3,9 +3,17 @@ ShortsForge — AI 콘텐츠 생성기
 유튜브 쇼츠 | 인스타 캐러셀 | 인스타 릴스
 실행: streamlit run app.py
 """
-from pathlib import Path
+import os
 import streamlit as st
 
+# Streamlit Cloud secrets → 환경변수로 먼저 주입 (config.py import 전에)
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    pass
+
+from pathlib import Path
 from styles import STYLES
 from core.voice import VOICES
 from core.script import INSTA_GENRE_SYSTEM

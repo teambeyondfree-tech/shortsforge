@@ -5,14 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# API 키 — 로컬 .env 우선, Streamlit Cloud secrets 폴백
+# API 키 — .env 또는 Streamlit Cloud secrets (app.py에서 env로 주입)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    try:
-        import streamlit as st
-        GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-    except Exception:
-        pass
 
 # 경로
 BASE_DIR   = Path(__file__).parent
