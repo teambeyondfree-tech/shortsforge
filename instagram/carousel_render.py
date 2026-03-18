@@ -393,9 +393,6 @@ def _render_content(slide: dict, num: int, total: int, genre: str, use_ai_bg: bo
     heading = _strip_emoji(slide.get("heading", ""))
     body    = _strip_emoji(slide.get("body", "") or "")
 
-    # 큰 따옴표 배경 장식
-    _draw_big_quote(canvas, th["accent"], opacity=15)
-
     # 번호 파싱 (heading은 위에서 이미 선언됨)
     parts   = heading.split(" ", 1)
     num_str = parts[0] if parts and parts[0].isdigit() else str(num - 1)
