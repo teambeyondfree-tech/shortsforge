@@ -153,6 +153,7 @@ with tab_shorts:
     if st.button("🚀 쇼츠 만들기", disabled=not shorts_topic.strip(), key="btn_shorts",
                  help="클릭하면 AI가 자동으로 영상을 만들어줍니다"):
 
+        st.session_state.pop("shorts_result", None)
         status   = st.empty()
         progress = st.progress(0)
         log_area = st.empty()
@@ -166,7 +167,6 @@ with tab_shorts:
 
         try:
             from core.pipeline import run as run_pipeline
-
             output_path = run_pipeline(
                 topic=shorts_topic.strip(),
                 genre=shorts_genre,
@@ -178,51 +178,56 @@ with tab_shorts:
                 elevenlabs_voice_id=shorts_el_voice_id,
                 motion_engine=shorts_motion,
             )
-
-            progress.progress(1.0)
-            status.markdown("**✅ 완성!**")
-            st.success("영상이 만들어졌습니다!")
-
             with open(output_path, "rb") as f:
                 video_bytes = f.read()
-
-            col_dl, col_pv, col_yt = st.columns(3)
-            with col_dl:
-                st.download_button(
-                    label="⬇️ 다운로드",
-                    data=video_bytes,
-                    file_name=output_path.name,
-                    mime="video/mp4",
-                    use_container_width=True,
-                )
-            with col_pv:
-                if st.button("▶️ 미리보기", use_container_width=True, key="pv_shorts"):
-                    st.video(str(output_path))
-            with col_yt:
-                if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_shorts"):
-                    try:
-                        from core.upload import upload_to_youtube
-                        yt_url = upload_to_youtube(
-                            video_path=output_path,
-                            title=output_path.stem,
-                            description=f"#{shorts_genre} #쇼츠 #ShortsForge",
-                            tags=[shorts_genre, "쇼츠", shorts_topic.strip()],
-                            privacy="private",
-                        )
-                        st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
-                    except FileNotFoundError as fe:
-                        st.error(str(fe))
-                    except Exception as ue:
-                        st.error(f"업로드 실패: {ue}")
-
-            st.info(f"저장 위치: `{output_path}`")
-
+            st.session_state.shorts_result = {
+                "path": output_path,
+                "bytes": video_bytes,
+                "genre": shorts_genre,
+                "topic": shorts_topic.strip(),
+            }
+            status.markdown("**✅ 완성!**")
+            progress.progress(1.0)
+            log_area.empty()
         except Exception as e:
             progress.empty()
             st.error(f"오류 발생: {e}")
             with st.expander("오류 상세"):
                 import traceback
                 st.code(traceback.format_exc())
+
+    # 결과 표시 — session_state 기반이라 버튼 눌러도 유지됨
+    if "shorts_result" in st.session_state:
+        _r = st.session_state.shorts_result
+        st.success("영상이 만들어졌습니다!")
+        st.video(_r["bytes"])
+        col_dl, col_yt = st.columns(2)
+        with col_dl:
+            st.download_button(
+                label="⬇️ 다운로드",
+                data=_r["bytes"],
+                file_name=_r["path"].name,
+                mime="video/mp4",
+                use_container_width=True,
+                key="dl_shorts",
+            )
+        with col_yt:
+            if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_shorts"):
+                try:
+                    from core.upload import upload_to_youtube
+                    yt_url = upload_to_youtube(
+                        video_path=_r["path"],
+                        title=_r["path"].stem,
+                        description=f"#{_r['genre']} #쇼츠 #ShortsForge",
+                        tags=[_r["genre"], "쇼츠", _r["topic"]],
+                        privacy="private",
+                    )
+                    st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
+                except FileNotFoundError as fe:
+                    st.error(str(fe))
+                except Exception as ue:
+                    st.error(f"업로드 실패: {ue}")
+        st.caption(f"저장 위치: `{_r['path']}`")
 
 
 # ═══════════════════════════════════════════
@@ -405,6 +410,7 @@ with tab_reels:
     st.markdown("")
     if st.button("🎥 릴스 만들기", disabled=not reels_topic.strip(), key="btn_reels"):
 
+        st.session_state.pop("reels_result", None)
         status   = st.empty()
         progress = st.progress(0)
         log_area = st.empty()
@@ -418,7 +424,6 @@ with tab_reels:
 
         try:
             from core.pipeline import run as run_pipeline
-
             output_path = run_pipeline(
                 topic=reels_topic.strip(),
                 genre=reels_genre_key,
@@ -430,51 +435,56 @@ with tab_reels:
                 elevenlabs_voice_id=reels_el_voice_id,
                 motion_engine=reels_motion,
             )
-
-            progress.progress(1.0)
-            status.markdown("**✅ 릴스 완성!**")
-            st.success("릴스 영상이 완성됐습니다!")
-
             with open(output_path, "rb") as f:
                 video_bytes = f.read()
-
-            col_dl, col_pv, col_yt = st.columns(3)
-            with col_dl:
-                st.download_button(
-                    label="⬇️ 다운로드",
-                    data=video_bytes,
-                    file_name=output_path.name,
-                    mime="video/mp4",
-                    use_container_width=True,
-                )
-            with col_pv:
-                if st.button("▶️ 미리보기", use_container_width=True, key="pv_reels"):
-                    st.video(str(output_path))
-            with col_yt:
-                if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_reels"):
-                    try:
-                        from core.upload import upload_to_youtube
-                        yt_url = upload_to_youtube(
-                            video_path=output_path,
-                            title=output_path.stem,
-                            description=f"#{reels_genre_label} #릴스 #ShortsForge",
-                            tags=[reels_genre_label, "릴스", reels_topic.strip()],
-                            privacy="private",
-                        )
-                        st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
-                    except FileNotFoundError as fe:
-                        st.error(str(fe))
-                    except Exception as ue:
-                        st.error(f"업로드 실패: {ue}")
-
-            st.info(f"저장 위치: `{output_path}`")
-
+            st.session_state.reels_result = {
+                "path": output_path,
+                "bytes": video_bytes,
+                "genre": reels_genre_label,
+                "topic": reels_topic.strip(),
+            }
+            status.markdown("**✅ 릴스 완성!**")
+            progress.progress(1.0)
+            log_area.empty()
         except Exception as e:
             progress.empty()
             st.error(f"오류 발생: {e}")
             with st.expander("오류 상세"):
                 import traceback
                 st.code(traceback.format_exc())
+
+    # 결과 표시 — session_state 기반이라 버튼 눌러도 유지됨
+    if "reels_result" in st.session_state:
+        _r = st.session_state.reels_result
+        st.success("릴스 영상이 완성됐습니다!")
+        st.video(_r["bytes"])
+        col_dl, col_yt = st.columns(2)
+        with col_dl:
+            st.download_button(
+                label="⬇️ 다운로드",
+                data=_r["bytes"],
+                file_name=_r["path"].name,
+                mime="video/mp4",
+                use_container_width=True,
+                key="dl_reels",
+            )
+        with col_yt:
+            if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_reels"):
+                try:
+                    from core.upload import upload_to_youtube
+                    yt_url = upload_to_youtube(
+                        video_path=_r["path"],
+                        title=_r["path"].stem,
+                        description=f"#{_r['genre']} #릴스 #ShortsForge",
+                        tags=[_r["genre"], "릴스", _r["topic"]],
+                        privacy="private",
+                    )
+                    st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
+                except FileNotFoundError as fe:
+                    st.error(str(fe))
+                except Exception as ue:
+                    st.error(f"업로드 실패: {ue}")
+        st.caption(f"저장 위치: `{_r['path']}`")
 
 
 # ───────────────────────────────────────────
