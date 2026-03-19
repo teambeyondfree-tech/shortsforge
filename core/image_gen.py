@@ -6,31 +6,42 @@ Gemini Imagen API → 장면별 이미지 생성
 import time
 import requests
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 from google import genai
 from google.genai import types
 import config
 
 
-def _generate_imagen(prompt: str, output_path: Path) -> bool:
-    """Gemini Imagen 3으로 이미지 생성 (무료 500장/일)"""
-    try:
-        client = genai.Client(api_key=config.GEMINI_API_KEY)
-        response = client.models.generate_images(
-            model=config.MODEL_IMAGE,
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="9:16",
-            ),
-        )
-        image_bytes = response.generated_images[0].image.image_bytes
-        output_path.write_bytes(image_bytes)
-        return True
-    except Exception as e:
-        print(f"    [Imagen 실패] {e} → Pollinations 폴백 사용")
-        return False
+def _is_429(e: Exception) -> bool:
+    msg = str(e)
+    return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower()
+
+
+def _generate_imagen(prompt: str, output_path: Path, max_retries: int = 4) -> bool:
+    """Gemini Imagen으로 이미지 생성 — 429 발생 시 최대 4회 재시도"""
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_images(
+                model=config.MODEL_IMAGE,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="9:16",
+                ),
+            )
+            image_bytes = response.generated_images[0].image.image_bytes
+            output_path.write_bytes(image_bytes)
+            return True
+        except Exception as e:
+            if _is_429(e) and attempt < max_retries - 1:
+                wait = 30 * (attempt + 1)   # 30s → 60s → 90s
+                print(f"    [Imagen 429] 한도 초과 — {wait}초 대기 후 재시도 ({attempt+1}/{max_retries})")
+                time.sleep(wait)
+            else:
+                print(f"    [Imagen 실패] {e} → Pollinations 폴백")
+                return False
+    return False
 
 
 def _generate_pollinations(prompt: str, output_path: Path) -> bool:
@@ -66,16 +77,13 @@ def generate_scene_image(prompt: str, scene_id: int, job_dir: Path) -> Path:
     Imagen 실패 시 Pollinations 자동 폴백.
     """
     output_path = job_dir / f"scene_{scene_id:02d}.png"
-
     print(f"  이미지 생성 중... 장면 {scene_id}")
 
-    # 1차: Gemini Imagen
     if _generate_imagen(prompt, output_path):
         _resize_to_video(output_path)
         return output_path
 
-    # 2차: Pollinations 폴백
-    time.sleep(1)
+    time.sleep(2)
     if _generate_pollinations(prompt, output_path):
         _resize_to_video(output_path)
         return output_path
@@ -83,34 +91,26 @@ def generate_scene_image(prompt: str, scene_id: int, job_dir: Path) -> Path:
     raise RuntimeError(f"장면 {scene_id} 이미지 생성 실패")
 
 
-def generate_all_images(scene_prompts: list, job_dir: Path, max_workers: int = 3) -> list:
+def generate_all_images(scene_prompts: list, job_dir: Path, max_workers: int = 1) -> list:
     """
-    모든 장면 이미지를 병렬 생성.
-    반환: [{"scene_id": 1, "image_path": Path, "duration": 10, "motion": "zoom_in"}, ...]
+    모든 장면 이미지 생성 (순차 처리 — Imagen 429 방지).
+    장면 사이 3초 간격으로 API 부하 분산.
     """
     results = []
-
-    def _task(item):
+    for i, item in enumerate(scene_prompts):
+        if i > 0:
+            time.sleep(3)   # 장면 간 3초 간격
         image_path = generate_scene_image(
             prompt=item["prompt"],
             scene_id=item["scene_id"],
             job_dir=job_dir,
         )
-        return {
-            "scene_id": item["scene_id"],
-            "image_path": image_path,
-            "duration": item["duration"],
-            "motion": item["motion"],
-        }
+        results.append({
+            "scene_id":    item["scene_id"],
+            "image_path":  image_path,
+            "duration":    item["duration"],
+            "motion":      item["motion"],
+            "description": item.get("description", ""),
+        })
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_task, item): item["scene_id"]
-            for item in scene_prompts
-        }
-        for future in as_completed(futures):
-            results.append(future.result())
-
-    # scene_id 순서대로 정렬
-    results.sort(key=lambda x: x["scene_id"])
     return results

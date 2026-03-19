@@ -30,16 +30,18 @@ ELEVENLABS_VOICES = {
 }
 
 
-def _retry_api_call(func, max_retries=3):
-    """API 호출을 exponential backoff로 재시도"""
+def _retry_api_call(func, max_retries=4):
+    """API 호출 재시도 — 429는 60초 대기"""
     for attempt in range(max_retries):
         try:
             return func()
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
-            wait = 2 ** attempt
-            print(f"    [재시도 {attempt+1}/{max_retries}] {e} → {wait}초 후 재시도")
+            msg = str(e)
+            is_429 = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+            wait = 60 if is_429 else (2 ** attempt)
+            print(f"    [재시도 {attempt+1}/{max_retries}] {'429 한도초과' if is_429 else str(e)[:60]} → {wait}초 대기")
             time.sleep(wait)
 
 
@@ -130,7 +132,30 @@ def _generate_voice_gemini(narration: str, voice_name: str, output_path: Path, g
             ),
         )
 
-    response = _retry_api_call(_call)
+    try:
+        response = _retry_api_call(_call)
+    except Exception as e:
+        # Pro TTS 한도 소진 시 Flash로 자동 폴백
+        if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and "pro" in config.MODEL_TTS:
+            print("  [TTS] Pro 한도 소진 → Flash로 자동 폴백")
+            def _call_flash():
+                return client.models.generate_content(
+                    model="gemini-2.5-flash-preview-tts",
+                    contents=tts_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name=voice_name,
+                                )
+                            )
+                        ),
+                    ),
+                )
+            response = _retry_api_call(_call_flash)
+        else:
+            raise
     audio_data = response.candidates[0].content.parts[0].inline_data.data
 
     with wave.open(str(output_path), "wb") as wf:

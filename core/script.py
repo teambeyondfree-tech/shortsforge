@@ -84,16 +84,18 @@ REELS_EMPATHY = {
 }
 
 
-def _retry_api_call(func, max_retries=3):
-    """Gemini API 호출을 exponential backoff로 재시도"""
+def _retry_api_call(func, max_retries=4):
+    """Gemini API 호출 재시도 — 429는 길게 대기"""
     for attempt in range(max_retries):
         try:
             return func()
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
-            wait = 2 ** attempt
-            print(f"    [재시도 {attempt+1}/{max_retries}] {e} → {wait}초 후 재시도")
+            msg = str(e)
+            is_429 = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+            wait = 60 if is_429 else (2 ** attempt)
+            print(f"    [재시도 {attempt+1}/{max_retries}] {'429 한도초과' if is_429 else str(e)[:60]} → {wait}초 대기")
             time.sleep(wait)
 
 
