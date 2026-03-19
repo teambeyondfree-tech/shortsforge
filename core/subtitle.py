@@ -1,11 +1,26 @@
 """
-자막 생성 모듈 v2
-ASS 파일(libass 의존) → drawtext 방식으로 변경.
-폰트 파일을 직접 지정해 Streamlit Cloud / Windows 모두 정상 렌더링.
+자막 생성 모듈 v3
+① Whisper (faster-whisper) — 실제 음성 기반 정확한 타이밍 (권장)
+② 음절 타이밍 — Whisper 불가 시 폴백
 """
+import json
 import wave
 from pathlib import Path
 import config
+
+# Whisper 모델 캐시 (프로세스 내 1회만 로딩)
+_whisper_model = None
+
+
+def _get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        print("  [Whisper] 모델 로딩 중... (최초 1회, 이후 캐시)")
+        # base 모델: 한국어 정확도 좋음, CPU에서 ~10초 내 처리
+        _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        print("  [Whisper] 모델 로딩 완료")
+    return _whisper_model
 
 
 def _get_audio_duration(audio_path: Path) -> float:
@@ -13,37 +28,78 @@ def _get_audio_duration(audio_path: Path) -> float:
         return wf.getnframes() / wf.getframerate()
 
 
-def _group_words(words: list, chars_per_line: int = 10) -> list:
-    """어절을 한 줄에 표시할 그룹으로 묶기"""
+def _group_timed_words(words: list, chars_per_line: int = 11) -> list[list]:
+    """단어 목록을 한 줄 표시 그룹으로 묶기"""
     groups, cur, cur_len = [], [], 0
     for w in words:
-        if cur_len + len(w) > chars_per_line and cur:
+        text = w["word"]
+        if cur_len + len(text) > chars_per_line and cur:
             groups.append(cur)
-            cur, cur_len = [w], len(w)
+            cur, cur_len = [w], len(text)
         else:
             cur.append(w)
-            cur_len += len(w)
+            cur_len += len(text)
     if cur:
         groups.append(cur)
     return groups
 
 
-def generate_subtitle_data(
-    narration: str,
-    audio_path: Path,
-    job_dir: Path,
-) -> list:
-    """
-    나레이션 + 음성 길이 → 자막 세그먼트 생성 + 텍스트 파일 저장.
+def _generate_with_whisper(audio_path: Path, job_dir: Path) -> list:
+    """Whisper로 실제 음성 타이밍 추출 → 자막 세그먼트 생성"""
+    model = _get_whisper_model()
 
-    반환: [{text, start, end, file}, ...]
-    """
+    print("  [Whisper] 음성 분석 중...")
+    segments_iter, _ = model.transcribe(
+        str(audio_path),
+        language="ko",
+        word_timestamps=True,
+        vad_filter=True,          # 무음 구간 필터
+        vad_parameters={"min_silence_duration_ms": 200},
+    )
+
+    # 단어별 타이밍 수집
+    words = []
+    for seg in segments_iter:
+        if seg.words:
+            for w in seg.words:
+                clean = w.word.strip()
+                if clean:
+                    words.append({"word": clean, "start": w.start, "end": w.end})
+
+    if not words:
+        raise ValueError("Whisper가 단어를 인식하지 못했습니다")
+
+    print(f"  [Whisper] 단어 {len(words)}개 인식 완료")
+
+    # 2-3어절씩 그룹화
+    groups = _group_timed_words(words, chars_per_line=11)
+
+    segments_out = []
+    for group in groups:
+        text  = " ".join(w["word"] for w in group)
+        start = group[0]["start"]
+        end   = group[-1]["end"]
+
+        seg_file = job_dir / f"sub_{len(segments_out):03d}.txt"
+        seg_file.write_text(text, encoding="utf-8")
+
+        segments_out.append({
+            "text":  text,
+            "start": round(start, 3),
+            "end":   round(end + 0.05, 3),  # 약간 여유
+            "file":  seg_file,
+        })
+
+    return segments_out
+
+
+def _generate_syllable_based(narration: str, audio_path: Path, job_dir: Path) -> list:
+    """폴백: 음절 수 기반 타이밍 계산"""
     duration = _get_audio_duration(audio_path)
     words = [w for w in narration.split() if w.strip()]
     if not words:
         return []
 
-    # 음절 기준으로 단어별 타이밍 계산
     total_syllables = sum(len(w) for w in words)
     t_per_syl = duration / max(total_syllables, 1)
 
@@ -54,17 +110,23 @@ def generate_subtitle_data(
         timed.append({"word": w, "start": cursor, "end": cursor + dur})
         cursor += dur
 
-    # 2-3 어절씩 그룹화
-    groups = _group_words(words, chars_per_line=11)
+    groups, cur, cur_len = [], [], 0
+    for w in words:
+        if cur_len + len(w) > 11 and cur:
+            groups.append(cur)
+            cur, cur_len = [w], len(w)
+        else:
+            cur.append(w)
+            cur_len += len(w)
+    if cur:
+        groups.append(cur)
 
-    segments = []
-    word_idx = 0
+    segments, word_idx = [], 0
     for group in groups:
         g_start = timed[word_idx]["start"]
         g_end   = timed[word_idx + len(group) - 1]["end"]
         text    = " ".join(group)
 
-        # 텍스트를 파일로 저장 (한국어 커맨드라인 인코딩 이슈 회피)
         seg_file = job_dir / f"sub_{len(segments):03d}.txt"
         seg_file.write_text(text, encoding="utf-8")
 
@@ -79,12 +141,21 @@ def generate_subtitle_data(
     return segments
 
 
+def generate_subtitle_data(narration: str, audio_path: Path, job_dir: Path) -> list:
+    """
+    자막 세그먼트 생성.
+    Whisper 우선, 실패 시 음절 타이밍으로 폴백.
+    """
+    try:
+        return _generate_with_whisper(audio_path, job_dir)
+    except Exception as e:
+        print(f"  [Whisper 실패 → 음절 타이밍 사용] {e}")
+        return _generate_syllable_based(narration, audio_path, job_dir)
+
+
 def generate_subtitles(audio_path: Path, output_path: Path, narration: str) -> Path:
-    """하위 호환용 — pipeline.py가 이 함수를 호출하므로 유지."""
-    # job_dir = output_path 부모 폴더
+    """pipeline.py 호환용"""
     segs = generate_subtitle_data(narration, audio_path, output_path.parent)
-    # 세그먼트 정보를 output_path에 JSON으로 저장 (compose에서 읽음)
-    import json
     data = [{"text": s["text"], "start": s["start"], "end": s["end"],
              "file": str(s["file"])} for s in segs]
     output_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")

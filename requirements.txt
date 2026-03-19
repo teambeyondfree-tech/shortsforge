@@ -9,6 +9,9 @@ numpy
 # ① ElevenLabs TTS (고품질 한국어 음성)
 elevenlabs>=1.0.0
 
+# Whisper 자막 싱크 (정확한 타이밍)
+faster-whisper>=1.0.0
+
 # ② Runway AI 영상 생성
 runwayml>=0.1.0
 

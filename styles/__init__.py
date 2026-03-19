@@ -1,10 +1,12 @@
-from .zolaman  import ZOLAMAN
-from .flat     import FLAT
-from .webtoon  import WEBTOON
-from .pixel    import PIXEL
+from .zolaman   import ZOLAMAN
+from .flat      import FLAT
+from .webtoon   import WEBTOON
+from .pixel     import PIXEL
 from .southpark import SOUTHPARK
+from .finance   import FINANCE
 
 STYLES = {
+    "경제/금융":  FINANCE,
     "졸라맨":    ZOLAMAN,
     "플랫디자인": FLAT,
     "웹툰":      WEBTOON,
