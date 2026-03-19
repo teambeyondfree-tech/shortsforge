@@ -484,25 +484,33 @@ with st.sidebar:
     st.header("⚙️ 설정")
 
     st.markdown("**API 상태**")
-    st.success("Gemini ✅") if config.GEMINI_API_KEY else st.error("Gemini ❌")
-    st.success("ElevenLabs ✅") if config.ELEVENLABS_API_KEY else st.warning("ElevenLabs — 미설정 (선택)")
-    st.success("Runway ✅") if config.RUNWAY_API_KEY else st.warning("Runway — 미설정 (선택)")
 
+    _api_rows = [
+        ("Gemini",      bool(config.GEMINI_API_KEY),      True),
+        ("ElevenLabs",  bool(config.ELEVENLABS_API_KEY),  False),
+        ("Runway",      bool(config.RUNWAY_API_KEY),      False),
+    ]
     try:
         from core.upload import is_authenticated
-        if is_authenticated():
-            st.success("YouTube ✅ 인증됨")
-        else:
-            st.warning("YouTube — 미인증 (선택)")
+        _yt_ok = is_authenticated()
     except Exception:
-        st.warning("YouTube — 미인증 (선택)")
+        _yt_ok = False
+    _api_rows.append(("YouTube", _yt_ok, False))
+
+    for _name, _ok, _required in _api_rows:
+        if _ok:
+            st.success(f"{_name} ✅")
+        elif _required:
+            st.error(f"{_name} ❌ 필수")
+        else:
+            st.caption(f"{_name} — 미설정 (선택)")
 
     st.divider()
     st.markdown("**무료 한도 (일별)**")
     st.markdown("""
-    - 스크립트 생성: 1,500회
-    - 음성 합성: 250회
-    - 이미지 생성: 500장
+- 스크립트 생성: 1,500회
+- 음성 합성: 50회 (Pro)
+- 이미지 생성: 500장
     """)
 
     st.divider()
@@ -512,7 +520,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**기능 안내**")
     st.markdown("""
-    🎬 **쇼츠**: 유튜브 최적화 세로 영상
-    📸 **캐러셀**: 인스타 슬라이드 이미지 ZIP
-    🎥 **릴스**: 인스타 후킹 스타일 세로 영상
+🎬 **쇼츠** — 유튜브 최적화 세로 영상
+📸 **캐러셀** — 인스타 슬라이드 ZIP
+🎥 **릴스** — 인스타 후킹 스타일 영상
     """)
