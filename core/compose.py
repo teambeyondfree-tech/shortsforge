@@ -37,8 +37,8 @@ def _esc(path: Path) -> str:
 
 def _build_drawtext_filter(segments: list, font_path: Path) -> str:
     """
-    세그먼트 리스트 → ffmpeg drawtext 필터 문자열.
-    각 세그먼트 텍스트는 파일로 저장돼 있음 (한국어 인코딩 안전).
+    검은 박스 + 흰 글자 카드 자막 스타일.
+    box=1 로 반투명 검정 배경 생성, 테두리 없이 깔끔하게.
     """
     if not segments:
         return "null"
@@ -52,13 +52,14 @@ def _build_drawtext_filter(segments: list, font_path: Path) -> str:
             f"drawtext="
             f"fontfile='{font_esc}':"
             f"textfile='{file_esc}':"
-            f"fontsize=82:"
+            f"fontsize=88:"
             f"fontcolor=white:"
-            f"borderw=7:"
-            f"bordercolor=black:"
-            f"line_spacing=12:"
+            f"box=1:"
+            f"boxcolor=black@0.82:"
+            f"boxborderw=32:"
+            f"line_spacing=14:"
             f"x=(w-text_w)/2:"
-            f"y=h-340:"
+            f"y=h-420:"
             f"enable='between(t,{s},{e})'"
         )
         parts.append(part)
