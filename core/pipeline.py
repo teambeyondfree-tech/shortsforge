@@ -91,6 +91,7 @@ def run(
             full_narration, voice_name, audio_path,
             engine=voice_engine,
             elevenlabs_voice_id=elevenlabs_voice_id,
+            genre=genre,
         )
         voice_duration = voice_mod.get_voice_duration(audio_path)
         _safe_print(f"  음성 실제 길이: {voice_duration:.1f}초")
