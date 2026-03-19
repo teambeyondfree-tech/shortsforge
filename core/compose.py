@@ -94,23 +94,34 @@ def compose_final(
     vf = sub_filter if sub_filter != "null" else None
 
     if bgm_path:
-        audio_filter = (
-            f"[1:a]volume=1.0[voice];"
-            f"[2:a]volume={config.BGM_VOLUME}[bgm];"
-            f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2[audio]"
-        )
+        # filter_complex 안에 오디오 + 비디오(자막) 필터 모두 통합
+        # -filter_complex 와 -vf 동시 사용 불가 → 하나로 합침
+        if vf:
+            fc = (
+                f"[1:a]volume=1.0[voice];"
+                f"[2:a]volume={config.BGM_VOLUME}[bgm];"
+                f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2[audio];"
+                f"[0:v]{vf}[v]"
+            )
+            map_v, map_a = "[v]", "[audio]"
+        else:
+            fc = (
+                f"[1:a]volume=1.0[voice];"
+                f"[2:a]volume={config.BGM_VOLUME}[bgm];"
+                f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2[audio]"
+            )
+            map_v, map_a = "0:v", "[audio]"
+
         cmd = [
             "ffmpeg", "-y",
             "-i", str(video_path),
             "-i", str(audio_path),
             "-stream_loop", "-1",
             "-i", str(bgm_path),
-            "-filter_complex", audio_filter,
-            "-map", "0:v",
-            "-map", "[audio]",
+            "-filter_complex", fc,
+            "-map", map_v,
+            "-map", map_a,
         ]
-        if vf:
-            cmd += ["-vf", vf]
     else:
         cmd = [
             "ffmpeg", "-y",

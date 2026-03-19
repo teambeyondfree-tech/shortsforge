@@ -110,7 +110,7 @@ def run(
 
         # ── 8. 자막 생성
         progress("자막 생성 중...", 0.78)
-        subtitle_path = job_dir / "subtitle.ass"
+        subtitle_path = job_dir / "subtitle.json"
         subtitle_mod.generate_subtitles(audio_path, subtitle_path, full_narration)
 
         # ── 9. 최종 합성

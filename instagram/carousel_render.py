@@ -401,8 +401,6 @@ def _render_content(slide: dict, num: int, total: int, genre: str, use_ai_bg: bo
     content_prompt = f"{heading} {body}"
     bg     = _fetch_ai_bg(content_prompt, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
     canvas = _tinted_overlay(bg, th["solid"], opacity=212)
-    heading = _strip_emoji(slide.get("heading", ""))
-    body    = _strip_emoji(slide.get("body", "") or "")
 
     # 번호 파싱 (heading은 위에서 이미 선언됨)
     parts   = heading.split(" ", 1)
