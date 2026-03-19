@@ -1,6 +1,7 @@
 """
-자막 생성 모듈
-나레이션 텍스트 + 음성 길이 → 어절 단위 카라오케 스타일 ASS 자막
+자막 생성 모듈 v2
+ASS 파일(libass 의존) → drawtext 방식으로 변경.
+폰트 파일을 직접 지정해 Streamlit Cloud / Windows 모두 정상 렌더링.
 """
 import wave
 from pathlib import Path
@@ -8,123 +9,83 @@ import config
 
 
 def _get_audio_duration(audio_path: Path) -> float:
-    """WAV 파일의 재생 길이(초) 반환"""
     with wave.open(str(audio_path), "rb") as wf:
         return wf.getnframes() / wf.getframerate()
 
 
-def _seconds_to_ass_time(sec: float) -> str:
-    """초 → ASS 타임코드 (H:MM:SS.cc)"""
-    h  = int(sec // 3600)
-    m  = int((sec % 3600) // 60)
-    s  = int(sec % 60)
-    cs = int((sec - int(sec)) * 100)
-    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
-
-
-def _make_ass_header(font: str, font_size: int) -> str:
-    """ASS 파일 헤더 (스타일 정의)"""
-    return f"""[Script Info]
-ScriptType: v4.00+
-PlayResX: {config.VIDEO_W}
-PlayResY: {config.VIDEO_H}
-ScaledBorderAndShadow: yes
-
-[V4+ Styles]
-Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,Strikeout,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Default,{font},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,{config.SUBTITLE_OUTLINE_W},0,2,40,40,120,1
-Style: Highlight,{font},{font_size},&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,{config.SUBTITLE_OUTLINE_W},0,2,40,40,120,1
-
-[Events]
-Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
-"""
-
-
-def _split_to_words(narration: str) -> list[str]:
-    """나레이션을 어절(공백 기준) 단위로 분리, 빈 문자열 제거"""
-    return [w for w in narration.split() if w.strip()]
-
-
-def _group_words(words: list[str], max_chars: int = 14) -> list[list[str]]:
-    """어절들을 한 줄에 표시할 그룹으로 묶기 (max_chars 글자 이하)"""
-    groups = []
-    current = []
-    current_len = 0
-
-    for word in words:
-        word_len = len(word)
-        if current_len + word_len > max_chars and current:
-            groups.append(current)
-            current = [word]
-            current_len = word_len
+def _group_words(words: list, chars_per_line: int = 10) -> list:
+    """어절을 한 줄에 표시할 그룹으로 묶기"""
+    groups, cur, cur_len = [], [], 0
+    for w in words:
+        if cur_len + len(w) > chars_per_line and cur:
+            groups.append(cur)
+            cur, cur_len = [w], len(w)
         else:
-            current.append(word)
-            current_len += word_len
-
-    if current:
-        groups.append(current)
-
+            cur.append(w)
+            cur_len += len(w)
+    if cur:
+        groups.append(cur)
     return groups
 
 
-def generate_subtitles(audio_path: Path, output_path: Path, narration: str) -> Path:
+def generate_subtitle_data(
+    narration: str,
+    audio_path: Path,
+    job_dir: Path,
+) -> list:
     """
-    나레이션 텍스트를 음성 길이에 맞춰 어절 단위 카라오케 ASS 자막으로 생성.
-    """
-    print("  자막 생성 중... (나레이션 텍스트 기반)")
+    나레이션 + 음성 길이 → 자막 세그먼트 생성 + 텍스트 파일 저장.
 
+    반환: [{text, start, end, file}, ...]
+    """
     duration = _get_audio_duration(audio_path)
-    words = _split_to_words(narration)
-
+    words = [w for w in narration.split() if w.strip()]
     if not words:
-        # 빈 나레이션이면 빈 자막 파일만 생성
-        header = _make_ass_header(config.SUBTITLE_FONT, config.SUBTITLE_FONT_SIZE)
-        output_path.write_text(header, encoding="utf-8")
-        return output_path
+        return []
 
-    # 총 음절 수 기준으로 어절별 시간 배분
+    # 음절 기준으로 단어별 타이밍 계산
     total_syllables = sum(len(w) for w in words)
-    time_per_syllable = duration / total_syllables if total_syllables > 0 else 0.1
+    t_per_syl = duration / max(total_syllables, 1)
 
-    # 어절별 타임스탬프 계산
-    timed_words = []
+    timed = []
     cursor = 0.0
-    for word in words:
-        word_dur = len(word) * time_per_syllable
-        timed_words.append({
-            "word": word,
-            "start": cursor,
-            "end": cursor + word_dur,
+    for w in words:
+        dur = len(w) * t_per_syl
+        timed.append({"word": w, "start": cursor, "end": cursor + dur})
+        cursor += dur
+
+    # 2-3 어절씩 그룹화
+    groups = _group_words(words, chars_per_line=11)
+
+    segments = []
+    word_idx = 0
+    for group in groups:
+        g_start = timed[word_idx]["start"]
+        g_end   = timed[word_idx + len(group) - 1]["end"]
+        text    = " ".join(group)
+
+        # 텍스트를 파일로 저장 (한국어 커맨드라인 인코딩 이슈 회피)
+        seg_file = job_dir / f"sub_{len(segments):03d}.txt"
+        seg_file.write_text(text, encoding="utf-8")
+
+        segments.append({
+            "text":  text,
+            "start": round(g_start, 3),
+            "end":   round(g_end, 3),
+            "file":  seg_file,
         })
-        cursor += word_dur
+        word_idx += len(group)
 
-    # 그룹으로 묶어서 카라오케 자막 생성
-    word_texts = [w["word"] for w in timed_words]
-    groups_text = _group_words(word_texts, max_chars=14)
+    return segments
 
-    header = _make_ass_header(config.SUBTITLE_FONT, config.SUBTITLE_FONT_SIZE)
-    lines = [header]
 
-    idx = 0
-    for group in groups_text:
-        if not group:
-            continue
-
-        g_start = timed_words[idx]["start"]
-        g_end = timed_words[idx + len(group) - 1]["end"]
-        s = _seconds_to_ass_time(g_start)
-        e = _seconds_to_ass_time(g_end)
-
-        # 카라오케 태그: {\k<centiseconds>}어절
-        kara_parts = []
-        for i, word in enumerate(group):
-            tw = timed_words[idx + i]
-            dur_cs = max(1, int((tw["end"] - tw["start"]) * 100))
-            kara_parts.append(f"{{\\k{dur_cs}}}{word}")
-
-        text = " ".join(kara_parts)
-        lines.append(f"Dialogue: 0,{s},{e},Default,,0,0,0,Karaoke,{text}")
-        idx += len(group)
-
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+def generate_subtitles(audio_path: Path, output_path: Path, narration: str) -> Path:
+    """하위 호환용 — pipeline.py가 이 함수를 호출하므로 유지."""
+    # job_dir = output_path 부모 폴더
+    segs = generate_subtitle_data(narration, audio_path, output_path.parent)
+    # 세그먼트 정보를 output_path에 JSON으로 저장 (compose에서 읽음)
+    import json
+    data = [{"text": s["text"], "start": s["start"], "end": s["end"],
+             "file": str(s["file"])} for s in segs]
+    output_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return output_path
