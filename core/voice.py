@@ -115,14 +115,20 @@ _DEFAULT_VOICE_DIRECTION = (
     "유튜브 쇼츠 나레이션처럼 리듬감 있게 읽어주세요."
 )
 
+_HOOK_PREFIX = (
+    "⚠️ 중요: 가장 첫 문장(후킹)은 특히 강하고 임팩트 있게 읽어주세요. "
+    "첫 3초 안에 시청자가 멈추게 만들어야 합니다. "
+    "첫 문장 후 0.3초 정도 자연스러운 간격을 두고 나머지를 읽어주세요.\n\n"
+)
+
 
 def _generate_voice_gemini(narration: str, voice_name: str, output_path: Path, genre: str = "") -> Path:
     """Gemini TTS로 나레이션 음성 생성 → WAV 저장"""
     client = genai.Client(api_key=config.GEMINI_API_KEY)
     print(f"  음성 생성 중... [Gemini] ({voice_name})")
 
-    direction = _GENRE_VOICE_DIRECTION.get(genre, _DEFAULT_VOICE_DIRECTION)
-    tts_prompt = f"{direction}\n\n읽을 내용:\n{narration}"
+    direction  = _GENRE_VOICE_DIRECTION.get(genre, _DEFAULT_VOICE_DIRECTION)
+    tts_prompt = f"{_HOOK_PREFIX}{direction}\n\n읽을 내용:\n{narration}"
 
     def _call():
         return client.models.generate_content(

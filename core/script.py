@@ -107,19 +107,28 @@ def generate_reels_script(topic: str, genre: str, duration: int = 30) -> dict:
     empathy = REELS_EMPATHY.get(genre, "공감 가는 일상 상황")
 
     # 30초 기준 5장면, 15초는 3장면
+    hook_desc = (
+        "⚡ 후킹 (절대 규칙): 20자 이내, 단 1문장. "
+        "반드시 아래 유형 중 하나:\n"
+        "  ① 충격형: '이거 모르면 평생 손해입니다'\n"
+        "  ② 질문형: '왜 열심히 할수록 가난해질까요?'\n"
+        "  ③ 반전형: '저축이 당신을 가난하게 만듭니다'\n"
+        "  ④ 직접호명: '지금 월급 300 이하면 꼭 보세요'\n"
+        "  → 시청자가 첫 3초 안에 스크롤을 멈춰야 함"
+    )
     if duration <= 15:
         scenes_spec = [
-            ("후킹", 3,  "스크롤을 멈추게 하는 충격적/공감 한 문장. 질문형 또는 반전형."),
-            ("가치", 8,  "핵심 정보 2가지를 빠르게 전달."),
-            ("CTA", 4,  "'나도'라고 댓글 달면 자료 무료 전송 유도."),
+            ("후킹", 3,  hook_desc),
+            ("가치", 8,  "핵심 정보 2가지. 구체적 숫자/사례 포함. 짧고 강렬하게."),
+            ("CTA", 4,  "변화 한 문장 + '나도' 댓글 유도 + 저장/팔로우 CTA."),
         ]
     else:
         scenes_spec = [
-            ("후킹", 3,  "스크롤을 멈추게 하는 충격적/공감 한 문장. 질문형 또는 반전형으로. 예: '이거 모르면 평생 손해입니다' / '왜 나는 열심히 해도 안 될까요?'"),
-            ("공감", 5,  f"{empathy}. '저도 그랬어요' 또는 '이런 적 있죠?' 스타일로 시청자가 고개 끄덕이게."),
-            ("가치1", 7, "핵심 팁/정보 첫 번째. 구체적 숫자나 사례 포함. 짧고 강렬하게."),
-            ("가치2", 7, "핵심 팁/정보 두 번째. 실천 가능한 내용으로."),
-            ("CTA", 8,  "결과/변화 한 문장 + '나도'라고 댓글 달면 전체 자료 무료 전송 유도. 저장/팔로우 CTA 포함."),
+            ("후킹", 3,  hook_desc),
+            ("공감", 5,  f"{empathy}. '저도 그랬어요' / '이런 적 있죠?' 스타일. 시청자가 고개 끄덕이게."),
+            ("가치1", 7, "핵심 팁 첫 번째. 구체적 숫자/사례 포함. 짧고 강렬하게."),
+            ("가치2", 7, "핵심 팁 두 번째. 바로 실천 가능한 내용으로."),
+            ("CTA", 8,  "변화/결과 한 문장 + '나도' 댓글 달면 자료 무료 전송 유도 + 저장/팔로우 CTA."),
         ]
 
     scenes_json = "\n".join([
@@ -198,52 +207,67 @@ def generate_script(topic: str, genre: str, duration: int = 60) -> dict:
     주제와 장르로 쇼츠/릴스 스크립트 생성.
     인스타 릴스(인스타_ prefix)는 후킹→공감→가치→CTA 구조 전용 함수로 분기.
     """
-    # 인스타 릴스는 전용 구조 함수로
     if genre.startswith("인스타_"):
         return generate_reels_script(topic, genre, duration)
 
     client = genai.Client(api_key=config.GEMINI_API_KEY)
     system = ALL_GENRE_SYSTEM.get(genre, GENRE_SYSTEM["교육"])
-    # 인스타 릴스(15-30초)는 장면 수 적게, 쇼츠(30-60초)는 기존 로직
-    if duration <= 15:
-        scene_count = 3
-    elif duration <= 30:
-        scene_count = max(3, duration // 8)
+
+    # 장면 수 결정 (첫 장면 항상 3초 후킹)
+    if duration <= 20:
+        body_scenes = 2
+    elif duration <= 35:
+        body_scenes = 3
     else:
-        scene_count = max(5, duration // 10)
+        body_scenes = max(4, (duration - 3) // 10)
+
+    total_scenes = 1 + body_scenes  # 후킹(3초) + 본편
+    body_duration = duration - 3
+    per_body = body_duration // body_scenes
 
     prompt = f"""
 {system}
 
 주제: "{topic}"
 총 길이: {duration}초
-장면 수: {scene_count}개 (각 장면 약 {duration // scene_count}초)
+장면 수: {total_scenes}개
 
-다음 규칙을 반드시 지켜서 JSON을 작성하세요:
+━━━ 필수 구조 ━━━
+장면1 [후킹] 3초 — 스크롤을 강제로 멈추는 단 1~2문장. 반드시 아래 유형 중 하나:
+  ① 충격형:    "이거 모르면 평생 손해입니다."
+  ② 질문형:    "왜 열심히 일할수록 가난해질까요?"
+  ③ 반전형:    "사실 저축은 당신을 가난하게 만들어요."
+  ④ 직접호명:  "지금 월급 300 이하면 꼭 보세요."
+  → 나레이션 글자 수: 20자 이내. 짧고 강렬하게.
 
-1. 첫 장면은 강력한 후킹 문장으로 시작 (예: "지금 당장 확인 안 하면 후회합니다")
-2. 마지막 장면은 처음과 자연스럽게 연결되는 루프 구조
-3. 나레이션은 실제 말하듯 구어체로 (문어체, 딱딱한 존댓말 금지)
-4. "그런데요", "사실은요", "진짜로요", "근데 있잖아요" 같은 표현 자연스럽게 포함
-5. 문장 사이에 리듬감을 위해 짧은 문장을 섞어주세요 (예: "놀랍죠?", "맞아요.", "그게 전부가 아니에요.")
-6. 숫자나 핵심 정보 앞에는 "무려", "딱", "단" 같은 강조 부사 활용
-7. 각 장면 나레이션은 TTS로 읽었을 때 자연스럽게 들리도록, 너무 긴 문장은 쪼개서 작성
-8. mood는 반드시 다음 중 하나: {MOOD_OPTIONS}
-9. motion은 반드시 다음 중 하나: {MOTION_OPTIONS}
-10. description은 영어로 (이미지 생성 프롬프트에 사용됨)
+장면2~{total_scenes-1} [본론] 각 {per_body}초 — 구체적 정보/사례/숫자 전달
+장면{total_scenes} [마무리] {per_body}초 — 후킹과 연결되는 반전/결론으로 루프 구조
+
+━━━ 나레이션 규칙 ━━━
+- 실제 말하듯 구어체 (문어체/딱딱한 존댓말 금지)
+- 짧은 문장으로 리듬감: "놀랍죠?", "맞아요.", "이게 끝이 아니에요."
+- 숫자/핵심 정보 앞: "무려", "딱", "단" 같은 강조 부사
+- 한 문장이 20자 넘으면 쪼개서 작성 (TTS 호흡 단위)
+- "그런데요", "사실은요", "진짜로요" 같은 자연스러운 접속 표현 포함
+
+━━━ 기타 ━━━
+- mood: {MOOD_OPTIONS} 중 하나
+- motion: {MOTION_OPTIONS} 중 하나
+- description: 영어로 (이미지 생성용), 후킹 장면은 dramatic close-up, high contrast 포함
 
 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 
 {{
-  "title": "유튜브 쇼츠 제목 (클릭 유도형)",
+  "title": "유튜브 쇼츠 제목 — 클릭/궁금증 유발형",
   "scenes": [
     {{
       "id": 1,
-      "duration": {duration // scene_count},
-      "narration": "한국어 나레이션 텍스트",
-      "description": "Visual scene description in English for image generation",
-      "mood": "mood_name",
-      "motion": "motion_type"
+      "role": "후킹",
+      "duration": 3,
+      "narration": "20자 이내 강렬한 후킹 문장",
+      "description": "Dramatic close-up visual in English",
+      "mood": "충격",
+      "motion": "zoom_in"
     }}
   ]
 }}

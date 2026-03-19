@@ -101,7 +101,7 @@ def run(
 
         # ── 4. 장면별 이미지 프롬프트 생성
         progress("이미지 프롬프트 생성 중...", 0.18)
-        scene_prompts = prompt_mod.build_all_prompts(scenes, style)
+        scene_prompts = prompt_mod.build_all_prompts(scenes, style, genre=genre)
 
         # ── 5. 장면별 이미지 생성 (병렬)
         progress("이미지 생성 중...", 0.22)
