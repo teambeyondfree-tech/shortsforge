@@ -48,5 +48,5 @@ SUBTITLE_OUTLINE_W = 5
 
 # Gemini 모델
 MODEL_SCRIPT = "gemini-2.0-flash"
-MODEL_TTS    = "gemini-2.5-flash-preview-tts"
+MODEL_TTS    = "gemini-2.5-pro-preview-tts"
 MODEL_IMAGE  = "imagen-4.0-fast-generate-001"
