@@ -199,16 +199,17 @@ def _diag_gradient(colors: list) -> Image.Image:
 
 
 def _fetch_ai_bg(heading: str, genre_prompt: str, grad: list) -> Image.Image:
-    """슬라이드 제목 기반으로 배경 이미지 생성"""
+    """슬라이드 제목 기반으로 배경 이미지 생성 — 장르 무드 우선, 내용으로 차별화"""
     try:
         import config
         from google import genai
+        from PIL import ImageFilter
         client = genai.Client(api_key=config.GEMINI_API_KEY)
-        # 제목 내용을 프롬프트에 반영
+        # 장르 무드를 앞에, 슬라이드 내용을 뒤에 → 톤은 일관, 이미지는 매번 다름
         prompt = (
-            f"{heading} concept, {genre_prompt}, "
-            "square 1:1, cinematic photography, dark moody atmosphere, "
-            "no text, no letters, no people, blurred bokeh background, ultra quality"
+            f"{genre_prompt}, {heading} related visual, "
+            "square 1:1, cinematic photography, dark moody, "
+            "no text, no letters, no people, soft bokeh, ultra quality"
         )
         resp = client.models.generate_images(
             model="imagen-4.0-fast-generate-001",
@@ -217,9 +218,7 @@ def _fetch_ai_bg(heading: str, genre_prompt: str, grad: list) -> Image.Image:
         )
         img_bytes = resp.generated_images[0].image.image_bytes
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB").resize((CANVAS, CANVAS))
-        # 블러 처리 — 텍스트 가독성 확보
-        from PIL import ImageFilter
-        img = img.filter(ImageFilter.GaussianBlur(radius=6))
+        img = img.filter(ImageFilter.GaussianBlur(radius=5))
         return img
     except Exception as e:
         print(f"  [AI 배경 fallback] {e}")
@@ -227,30 +226,44 @@ def _fetch_ai_bg(heading: str, genre_prompt: str, grad: list) -> Image.Image:
 
 
 def _dark_overlay(bg: Image.Image, opacity: int = 195) -> Image.Image:
-    """단순 다크 오버레이"""
     ov = Image.new("RGBA", bg.size, (0, 0, 0, opacity))
     return Image.alpha_composite(bg.convert("RGBA"), ov).convert("RGB")
 
 
-def _gradient_overlay(bg: Image.Image, solid_color: tuple, opacity: int = 180) -> Image.Image:
+def _tinted_overlay(bg: Image.Image, tint: tuple, opacity: int = 200) -> Image.Image:
     """
-    좌측 절반은 단색 오버레이(텍스트 영역), 우측은 점점 투명해지는 그라디언트 오버레이.
-    텍스트는 왼쪽에, 이미지는 오른쪽에서 보이는 효과.
+    장르 색감이 살짝 베인 오버레이 — 같은 장르면 항상 비슷한 톤으로 느껴짐.
+    tint: 장르 solid 색 (어두운 색)
     """
     W, H = bg.size
     arr = np.zeros((H, W, 4), dtype=np.uint8)
-    r, g, b = solid_color
-    # x축 기준: 0 → opacity, W//2 이후 → opacity/2 로 선형 감소
-    for xi in range(W):
-        if xi < W // 2:
-            a = opacity
-        else:
-            ratio = (xi - W // 2) / (W // 2)
-            a = int(opacity * (1 - ratio * 0.45))
-        arr[:, xi, 0] = r
-        arr[:, xi, 1] = g
-        arr[:, xi, 2] = b
-        arr[:, xi, 3] = a
+    r, g, b = tint
+    arr[:, :, 0] = r
+    arr[:, :, 1] = g
+    arr[:, :, 2] = b
+    arr[:, :, 3] = opacity
+    ov = Image.fromarray(arr, "RGBA")
+    return Image.alpha_composite(bg.convert("RGBA"), ov).convert("RGB")
+
+
+def _gradient_overlay(bg: Image.Image, tint: tuple, opacity: int = 205) -> Image.Image:
+    """
+    좌측(텍스트 영역)은 불투명, 우측은 이미지가 살짝 보이는 그라디언트.
+    tint: 장르 solid 색으로 통일감 부여.
+    """
+    W, H = bg.size
+    arr = np.zeros((H, W, 4), dtype=np.uint8)
+    r, g, b = tint
+    x_idx = np.arange(W, dtype=np.float32)
+    alpha = np.where(
+        x_idx < W // 2,
+        opacity,
+        (opacity * (1 - (x_idx - W // 2) / (W // 2) * 0.4)).astype(np.float32)
+    ).clip(0, 255).astype(np.uint8)
+    arr[:, :, 0] = r
+    arr[:, :, 1] = g
+    arr[:, :, 2] = b
+    arr[:, :, 3] = alpha[np.newaxis, :]
     ov = Image.fromarray(arr, "RGBA")
     return Image.alpha_composite(bg.convert("RGBA"), ov).convert("RGB")
 
@@ -338,8 +351,8 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
 
     # 배경 — 슬라이드 제목 기반으로 생성
     bg = _fetch_ai_bg(heading, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
-    # 좌측 그라디언트 오버레이: 텍스트 영역(좌)은 어둡게, 이미지(우)는 살짝 보이게
-    canvas = _gradient_overlay(bg, (0, 0, 0), opacity=205)
+    # 장르 색 tint 그라디언트 — 슬라이드마다 달라도 같은 톤으로 느껴짐
+    canvas = _gradient_overlay(bg, th["solid"], opacity=205)
 
     draw = ImageDraw.Draw(canvas)
 
@@ -374,8 +387,6 @@ def _render_cover(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Imag
         y += 20
         draw.text((x, y), slines[0], font=f_sub, fill=th["sub"])
 
-    # 장르 태그 (좌하단)
-    draw.text((PAD, CANVAS - PAD + 16), genre, font=f_tag, fill=th["accent"])
 
     return canvas
 
@@ -389,7 +400,7 @@ def _render_content(slide: dict, num: int, total: int, genre: str, use_ai_bg: bo
     # 슬라이드 내용 기반 배경 생성
     content_prompt = f"{heading} {body}"
     bg     = _fetch_ai_bg(content_prompt, th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
-    canvas = _dark_overlay(bg, opacity=210)
+    canvas = _tinted_overlay(bg, th["solid"], opacity=212)
     heading = _strip_emoji(slide.get("heading", ""))
     body    = _strip_emoji(slide.get("body", "") or "")
 
@@ -484,7 +495,7 @@ def _render_cta(slide: dict, genre: str, use_ai_bg: bool = True) -> Image.Image:
     heading = _strip_emoji(slide.get("heading", "저장하고 나중에 보세요"))
     body    = _strip_emoji(slide.get("body", "") or "")
     bg      = _fetch_ai_bg(f"{heading} {body}", th["bg_prompt"], th["grad"]) if use_ai_bg else _diag_gradient(th["grad"])
-    canvas  = _dark_overlay(bg, opacity=215)
+    canvas  = _tinted_overlay(bg, th["solid"], opacity=215)
 
     draw = ImageDraw.Draw(canvas)
 
