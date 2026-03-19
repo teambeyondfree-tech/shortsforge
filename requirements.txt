@@ -5,3 +5,13 @@ python-dotenv
 Pillow
 requests
 numpy
+
+# ① ElevenLabs TTS (고품질 한국어 음성)
+elevenlabs>=1.0.0
+
+# ② Runway AI 영상 생성
+runwayml>=0.1.0
+
+# ③ YouTube 자동 업로드
+google-api-python-client>=2.0.0
+google-auth-oauthlib>=1.0.0

@@ -8,8 +8,9 @@ import streamlit as st
 
 # Streamlit Cloud secrets → 환경변수로 먼저 주입 (config.py import 전에)
 try:
-    if "GEMINI_API_KEY" in st.secrets:
-        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    for _key in ["GEMINI_API_KEY", "ELEVENLABS_API_KEY", "RUNWAY_API_KEY"]:
+        if _key in st.secrets:
+            os.environ[_key] = st.secrets[_key]
 except Exception:
     pass
 
@@ -104,13 +105,6 @@ with tab_shorts:
 
     col3, col4 = st.columns(2)
     with col3:
-        shorts_voice = st.selectbox(
-            "목소리",
-            options=list(VOICES.keys()),
-            format_func=lambda k: f"{k} — {VOICES[k]}",
-            key="shorts_voice",
-        )
-    with col4:
         shorts_duration = st.selectbox(
             "영상 길이",
             options=[30, 45, 60],
@@ -118,6 +112,43 @@ with tab_shorts:
             format_func=lambda x: f"{x}초",
             key="shorts_duration",
         )
+    with col4:
+        shorts_motion = st.selectbox(
+            "영상 엔진",
+            options=["ken_burns", "runway"],
+            format_func=lambda x: "Ken Burns (무료)" if x == "ken_burns" else "🛸 Runway AI (유료)",
+            key="shorts_motion",
+        )
+
+    # 목소리 엔진 선택
+    voice_engine_shorts = st.radio(
+        "목소리 엔진",
+        options=["gemini", "elevenlabs"],
+        format_func=lambda x: "Gemini TTS (무료)" if x == "gemini" else "🎙️ ElevenLabs (고품질)",
+        horizontal=True,
+        key="voice_engine_shorts",
+    )
+
+    if voice_engine_shorts == "gemini":
+        shorts_voice = st.selectbox(
+            "목소리",
+            options=list(VOICES.keys()),
+            format_func=lambda k: f"{k} — {VOICES[k]}",
+            key="shorts_voice",
+        )
+        shorts_el_voice_id = ""
+    else:
+        from core.voice import ELEVENLABS_VOICES
+        el_voice_name = st.selectbox(
+            "ElevenLabs 목소리",
+            options=list(ELEVENLABS_VOICES.keys()),
+            format_func=lambda k: f"{k} — {ELEVENLABS_VOICES[k][1]}",
+            key="shorts_el_voice",
+        )
+        shorts_voice        = "Kore"
+        shorts_el_voice_id  = ELEVENLABS_VOICES[el_voice_name][0]
+        if not config.ELEVENLABS_API_KEY:
+            st.warning("⚠️ ELEVENLABS_API_KEY가 없습니다. .env에 추가하세요.")
 
     st.markdown("")
     if st.button("🚀 쇼츠 만들기", disabled=not shorts_topic.strip(), key="btn_shorts",
@@ -144,6 +175,9 @@ with tab_shorts:
                 voice_name=shorts_voice,
                 duration=shorts_duration,
                 progress_cb=on_progress_shorts,
+                voice_engine=voice_engine_shorts,
+                elevenlabs_voice_id=shorts_el_voice_id,
+                motion_engine=shorts_motion,
             )
 
             progress.progress(1.0)
@@ -153,7 +187,7 @@ with tab_shorts:
             with open(output_path, "rb") as f:
                 video_bytes = f.read()
 
-            col_dl, col_pv = st.columns(2)
+            col_dl, col_pv, col_yt = st.columns(3)
             with col_dl:
                 st.download_button(
                     label="⬇️ 다운로드",
@@ -165,6 +199,22 @@ with tab_shorts:
             with col_pv:
                 if st.button("▶️ 미리보기", use_container_width=True, key="pv_shorts"):
                     st.video(str(output_path))
+            with col_yt:
+                if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_shorts"):
+                    try:
+                        from core.upload import upload_to_youtube
+                        yt_url = upload_to_youtube(
+                            video_path=output_path,
+                            title=output_path.stem,
+                            description=f"#{shorts_genre} #쇼츠 #ShortsForge",
+                            tags=[shorts_genre, "쇼츠", shorts_topic.strip()],
+                            privacy="private",
+                        )
+                        st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
+                    except FileNotFoundError as fe:
+                        st.error(str(fe))
+                    except Exception as ue:
+                        st.error(f"업로드 실패: {ue}")
 
             st.info(f"저장 위치: `{output_path}`")
 
@@ -310,13 +360,6 @@ with tab_reels:
 
     col3, col4 = st.columns(2)
     with col3:
-        reels_voice = st.selectbox(
-            "목소리",
-            options=list(VOICES.keys()),
-            format_func=lambda k: f"{k} — {VOICES[k]}",
-            key="reels_voice",
-        )
-    with col4:
         reels_duration = st.selectbox(
             "릴스 길이",
             options=[15, 30],
@@ -324,6 +367,42 @@ with tab_reels:
             format_func=lambda x: f"{x}초",
             key="reels_duration",
         )
+    with col4:
+        reels_motion = st.selectbox(
+            "영상 엔진",
+            options=["ken_burns", "runway"],
+            format_func=lambda x: "Ken Burns (무료)" if x == "ken_burns" else "🛸 Runway AI (유료)",
+            key="reels_motion",
+        )
+
+    voice_engine_reels = st.radio(
+        "목소리 엔진",
+        options=["gemini", "elevenlabs"],
+        format_func=lambda x: "Gemini TTS (무료)" if x == "gemini" else "🎙️ ElevenLabs (고품질)",
+        horizontal=True,
+        key="voice_engine_reels",
+    )
+
+    if voice_engine_reels == "gemini":
+        reels_voice = st.selectbox(
+            "목소리",
+            options=list(VOICES.keys()),
+            format_func=lambda k: f"{k} — {VOICES[k]}",
+            key="reels_voice",
+        )
+        reels_el_voice_id = ""
+    else:
+        from core.voice import ELEVENLABS_VOICES
+        el_reels_name     = st.selectbox(
+            "ElevenLabs 목소리",
+            options=list(ELEVENLABS_VOICES.keys()),
+            format_func=lambda k: f"{k} — {ELEVENLABS_VOICES[k][1]}",
+            key="reels_el_voice",
+        )
+        reels_voice       = "Kore"
+        reels_el_voice_id = ELEVENLABS_VOICES[el_reels_name][0]
+        if not config.ELEVENLABS_API_KEY:
+            st.warning("⚠️ ELEVENLABS_API_KEY가 없습니다. .env에 추가하세요.")
 
     st.markdown("")
     if st.button("🎥 릴스 만들기", disabled=not reels_topic.strip(), key="btn_reels"):
@@ -349,6 +428,9 @@ with tab_reels:
                 voice_name=reels_voice,
                 duration=reels_duration,
                 progress_cb=on_progress_reels,
+                voice_engine=voice_engine_reels,
+                elevenlabs_voice_id=reels_el_voice_id,
+                motion_engine=reels_motion,
             )
 
             progress.progress(1.0)
@@ -358,7 +440,7 @@ with tab_reels:
             with open(output_path, "rb") as f:
                 video_bytes = f.read()
 
-            col_dl, col_pv = st.columns(2)
+            col_dl, col_pv, col_yt = st.columns(3)
             with col_dl:
                 st.download_button(
                     label="⬇️ 다운로드",
@@ -370,6 +452,22 @@ with tab_reels:
             with col_pv:
                 if st.button("▶️ 미리보기", use_container_width=True, key="pv_reels"):
                     st.video(str(output_path))
+            with col_yt:
+                if st.button("📺 YouTube 업로드", use_container_width=True, key="yt_reels"):
+                    try:
+                        from core.upload import upload_to_youtube
+                        yt_url = upload_to_youtube(
+                            video_path=output_path,
+                            title=output_path.stem,
+                            description=f"#{reels_genre_label} #릴스 #ShortsForge",
+                            tags=[reels_genre_label, "릴스", reels_topic.strip()],
+                            privacy="private",
+                        )
+                        st.success(f"업로드 완료! [YouTube에서 보기]({yt_url})")
+                    except FileNotFoundError as fe:
+                        st.error(str(fe))
+                    except Exception as ue:
+                        st.error(f"업로드 실패: {ue}")
 
             st.info(f"저장 위치: `{output_path}`")
 
@@ -388,10 +486,15 @@ with st.sidebar:
     st.header("⚙️ 설정")
 
     st.markdown("**API 상태**")
-    if config.GEMINI_API_KEY:
-        st.success("Gemini API 연결됨")
+    st.success("Gemini ✅") if config.GEMINI_API_KEY else st.error("Gemini ❌")
+    st.success("ElevenLabs ✅") if config.ELEVENLABS_API_KEY else st.warning("ElevenLabs — 미설정 (선택)")
+    st.success("Runway ✅") if config.RUNWAY_API_KEY else st.warning("Runway — 미설정 (선택)")
+
+    from core.upload import is_authenticated
+    if is_authenticated():
+        st.success("YouTube ✅ 인증됨")
     else:
-        st.error("Gemini API 키 없음")
+        st.warning("YouTube — 미인증 (credentials.json 필요)")
 
     st.divider()
     st.markdown("**무료 한도 (일별)**")

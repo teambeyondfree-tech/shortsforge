@@ -55,6 +55,9 @@ def run(
     voice_name: str,
     duration: int = 60,
     progress_cb: Callable[[str, float], None] | None = None,
+    voice_engine: str = "gemini",
+    elevenlabs_voice_id: str = "",
+    motion_engine: str = "ken_burns",
 ) -> Path:
     """
     전체 파이프라인 실행.
@@ -84,7 +87,11 @@ def run(
         # ── 2. 음성 합성 (먼저 실행해서 실제 길이 측정)
         progress("음성 합성 중...", 0.12)
         audio_path = job_dir / "voice.wav"
-        voice_mod.generate_voice(full_narration, voice_name, audio_path)
+        voice_mod.generate_voice(
+            full_narration, voice_name, audio_path,
+            engine=voice_engine,
+            elevenlabs_voice_id=elevenlabs_voice_id,
+        )
         voice_duration = voice_mod.get_voice_duration(audio_path)
         _safe_print(f"  음성 실제 길이: {voice_duration:.1f}초")
 
@@ -99,9 +106,9 @@ def run(
         progress("이미지 생성 중...", 0.22)
         scene_images = image_mod.generate_all_images(scene_prompts, job_dir)
 
-        # ── 6. Ken Burns 효과 적용 → 클립
+        # ── 6. 모션 효과 적용 → 클립 (Ken Burns 또는 Runway)
         progress("영상 움직임 효과 적용 중...", 0.50)
-        clips = motion_mod.apply_all_motion(scene_images, job_dir)
+        clips = motion_mod.apply_all_motion(scene_images, job_dir, engine=motion_engine)
 
         # ── 7. 클립 연결
         progress("클립 연결 중...", 0.65)

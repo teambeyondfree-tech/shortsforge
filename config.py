@@ -6,7 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API 키 — .env 또는 Streamlit Cloud secrets (app.py에서 env로 주입)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+RUNWAY_API_KEY     = os.getenv("RUNWAY_API_KEY", "")
+
+# YouTube OAuth 파일 경로 (로컬 전용)
+YOUTUBE_CREDENTIALS_FILE = Path(__file__).parent / "youtube_credentials.json"
+YOUTUBE_TOKEN_FILE       = Path(__file__).parent / "youtube_token.json"
 
 # 경로
 BASE_DIR   = Path(__file__).parent

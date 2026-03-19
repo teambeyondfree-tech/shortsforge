@@ -1,9 +1,13 @@
 """
-Ken Burns 효과 모듈
-정적 이미지 → 줌/패닝 효과가 있는 영상 클립
+영상 모션 모듈
+① Ken Burns 효과 (기본, 무료 — ffmpeg zoompan)
+② Runway Gen-3 Alpha Turbo (AI 영상, RUNWAY_API_KEY 필요)
 """
 import subprocess
 import os
+import time
+import base64
+import requests
 from pathlib import Path
 import config
 
@@ -98,25 +102,93 @@ def apply_ken_burns(image_path: Path, output_path: Path, duration: float, effect
     return output_path
 
 
-def apply_all_motion(scene_images: list, job_dir: Path) -> list:
+def _generate_clip_runway(image_path: Path, output_path: Path, duration: float, prompt: str = "") -> Path:
     """
-    모든 장면 이미지에 Ken Burns 적용.
+    Runway Gen-3 Alpha Turbo: 이미지 → AI 영상 클립 생성.
+    duration은 5초 또는 10초로 반올림 (Runway API 제한).
+    Runway 실패 시 호출부에서 Ken Burns로 대체.
+    """
+    try:
+        import runwayml
+    except ImportError:
+        raise RuntimeError("runwayml 패키지 없음. pip install runwayml")
+
+    if not config.RUNWAY_API_KEY:
+        raise RuntimeError("RUNWAY_API_KEY 없음")
+
+    clip_duration = 10 if duration >= 7 else 5
+
+    img_b64  = base64.b64encode(image_path.read_bytes()).decode()
+    data_uri = f"data:image/png;base64,{img_b64}"
+
+    client = runwayml.RunwayML(api_key=config.RUNWAY_API_KEY)
+    print(f"    [Runway] 요청 중... ({clip_duration}초)")
+
+    task = client.image_to_video.create(
+        model="gen3a_turbo",
+        prompt_image=data_uri,
+        prompt_text=prompt or "smooth cinematic motion, vertical 9:16",
+        duration=clip_duration,
+        ratio="768:1280",
+    )
+
+    for _ in range(60):  # 최대 5분 대기
+        task = client.tasks.retrieve(task.id)
+        if task.status == "SUCCEEDED":
+            break
+        if task.status == "FAILED":
+            raise RuntimeError(f"Runway 실패: {task.failure}")
+        print(f"    [Runway] 처리 중... ({task.status})")
+        time.sleep(5)
+    else:
+        raise RuntimeError("Runway 시간 초과")
+
+    video_bytes = requests.get(task.output[0], timeout=120).content
+    output_path.write_bytes(video_bytes)
+
+    # 원하는 duration에 맞게 트림
+    trimmed = output_path.with_suffix(".trim.mp4")
+    subprocess.run([
+        "ffmpeg", "-y", "-i", str(output_path),
+        "-t", str(duration), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(trimmed),
+    ], capture_output=True)
+    if trimmed.exists():
+        trimmed.replace(output_path)
+
+    return output_path
+
+
+def apply_all_motion(scene_images: list, job_dir: Path, engine: str = "ken_burns") -> list:
+    """
+    모든 장면 이미지에 모션 적용.
+    engine="ken_burns" → ffmpeg zoompan (기본, 무료)
+    engine="runway"    → Runway Gen-3 Alpha Turbo (AI 영상, 유료)
     반환: [{"scene_id": 1, "clip_path": Path}, ...]
     """
     clips = []
     for item in scene_images:
         clip_path = job_dir / f"clip_{item['scene_id']:02d}.mp4"
-        print(f"  움직임 효과 적용 중... 장면 {item['scene_id']} ({item['motion']})")
-        apply_ken_burns(
-            image_path=item["image_path"],
-            output_path=clip_path,
-            duration=float(item["duration"]),
-            effect=item["motion"],
-        )
-        clips.append({
-            "scene_id": item["scene_id"],
-            "clip_path": clip_path,
-        })
+        scene_id  = item["scene_id"]
+        duration  = float(item["duration"])
+
+        if engine == "runway":
+            print(f"  [Runway] AI 영상 생성 중... 장면 {scene_id}")
+            try:
+                _generate_clip_runway(
+                    image_path=item["image_path"],
+                    output_path=clip_path,
+                    duration=duration,
+                    prompt=item.get("description", ""),
+                )
+            except Exception as e:
+                print(f"    [Runway 실패 → Ken Burns 대체] {e}")
+                apply_ken_burns(item["image_path"], clip_path, duration, item["motion"])
+        else:
+            print(f"  움직임 효과 적용 중... 장면 {scene_id} ({item['motion']})")
+            apply_ken_burns(item["image_path"], clip_path, duration, item["motion"])
+
+        clips.append({"scene_id": scene_id, "clip_path": clip_path})
     return clips
 
 
