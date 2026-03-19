@@ -483,27 +483,86 @@ with tab_reels:
 with st.sidebar:
     st.header("⚙️ 설정")
 
-    st.markdown("**API 상태**")
+    # ── API 키 설정 ──────────────────────────
+    st.markdown("**API 키 설정**")
 
-    _api_rows = [
-        ("Gemini",      bool(config.GEMINI_API_KEY),      True),
-        ("ElevenLabs",  bool(config.ELEVENLABS_API_KEY),  False),
-        ("Runway",      bool(config.RUNWAY_API_KEY),      False),
+    def _save_env(updates: dict):
+        """현재 .env 파일에 키=값 업데이트 (없으면 생성)"""
+        env_path = config.BASE_DIR / ".env"
+        lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+        existing = {}
+        for line in lines:
+            if "=" in line and not line.strip().startswith("#"):
+                k, _, v = line.partition("=")
+                existing[k.strip()] = v.strip()
+        existing.update(updates)
+        env_path.write_text(
+            "\n".join(f"{k}={v}" for k, v in existing.items()) + "\n",
+            encoding="utf-8",
+        )
+        # 현재 프로세스 환경변수도 즉시 반영
+        for k, v in updates.items():
+            os.environ[k] = v
+
+    _API_INFO = [
+        (
+            "GEMINI_API_KEY",
+            "Gemini API",
+            config.GEMINI_API_KEY,
+            True,
+            "https://aistudio.google.com/app/apikey",
+            "Google AI Studio에서 무료 발급",
+        ),
+        (
+            "ELEVENLABS_API_KEY",
+            "ElevenLabs API",
+            config.ELEVENLABS_API_KEY,
+            False,
+            "https://elevenlabs.io/app/settings/api-keys",
+            "ElevenLabs — 고품질 한국어 TTS (선택)",
+        ),
+        (
+            "RUNWAY_API_KEY",
+            "Runway API",
+            config.RUNWAY_API_KEY,
+            False,
+            "https://app.runwayml.com/settings",
+            "Runway — AI 영상 생성 (선택, 유료)",
+        ),
     ]
+
+    for _env_key, _label, _current_val, _required, _link, _desc in _API_INFO:
+        _is_set = bool(_current_val)
+        _status  = "✅ 연결됨" if _is_set else ("❌ 필수" if _required else "미설정")
+        with st.expander(f"{_label}  {_status}"):
+            st.caption(_desc)
+            st.link_button("🔑 API 키 발급받기", _link, use_container_width=True)
+            _new_val = st.text_input(
+                "API 키 입력",
+                value=_current_val if _is_set else "",
+                type="password",
+                placeholder="키를 붙여넣고 저장 버튼 클릭",
+                key=f"input_{_env_key}",
+                label_visibility="collapsed",
+            )
+            if st.button("💾 저장", key=f"save_{_env_key}", use_container_width=True):
+                if _new_val.strip():
+                    _save_env({_env_key: _new_val.strip()})
+                    st.success("저장됐습니다! 새로고침하면 적용됩니다.")
+                else:
+                    st.warning("키를 입력해주세요.")
+
+    # YouTube는 OAuth 방식이라 별도 안내
     try:
         from core.upload import is_authenticated
         _yt_ok = is_authenticated()
     except Exception:
         _yt_ok = False
-    _api_rows.append(("YouTube", _yt_ok, False))
 
-    for _name, _ok, _required in _api_rows:
-        if _ok:
-            st.success(f"{_name} ✅")
-        elif _required:
-            st.error(f"{_name} ❌ 필수")
-        else:
-            st.caption(f"{_name} — 미설정 (선택)")
+    with st.expander(f"YouTube 업로드  {'✅ 인증됨' if _yt_ok else '미인증'}"):
+        st.caption("Google Cloud Console에서 OAuth2 credentials.json 다운로드 후 프로젝트 폴더에 저장")
+        st.link_button("🔑 Google Cloud Console", "https://console.cloud.google.com/apis/credentials", use_container_width=True)
+        st.caption("① YouTube Data API v3 활성화 → ② OAuth2 클라이언트 ID 생성 → ③ credentials.json 다운로드 → ④ 프로젝트 루트에 저장")
 
     st.divider()
     st.markdown("**무료 한도 (일별)**")
@@ -518,7 +577,6 @@ with st.sidebar:
     st.code(str(config.OUTPUT_DIR))
 
     st.divider()
-    st.markdown("**기능 안내**")
     st.markdown("""
 🎬 **쇼츠** — 유튜브 최적화 세로 영상
 📸 **캐러셀** — 인스타 슬라이드 ZIP
