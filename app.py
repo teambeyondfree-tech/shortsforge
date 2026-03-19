@@ -16,7 +16,7 @@ except Exception:
 
 from pathlib import Path
 from styles import STYLES
-from core.voice import VOICES
+from core.voice import VOICES, ELEVENLABS_VOICES
 from core.script import INSTA_GENRE_SYSTEM
 from instagram.carousel_script import CAROUSEL_GENRES
 import config
@@ -138,7 +138,6 @@ with tab_shorts:
         )
         shorts_el_voice_id = ""
     else:
-        from core.voice import ELEVENLABS_VOICES
         el_voice_name = st.selectbox(
             "ElevenLabs 목소리",
             options=list(ELEVENLABS_VOICES.keys()),
@@ -392,7 +391,6 @@ with tab_reels:
         )
         reels_el_voice_id = ""
     else:
-        from core.voice import ELEVENLABS_VOICES
         el_reels_name     = st.selectbox(
             "ElevenLabs 목소리",
             options=list(ELEVENLABS_VOICES.keys()),
@@ -490,11 +488,14 @@ with st.sidebar:
     st.success("ElevenLabs ✅") if config.ELEVENLABS_API_KEY else st.warning("ElevenLabs — 미설정 (선택)")
     st.success("Runway ✅") if config.RUNWAY_API_KEY else st.warning("Runway — 미설정 (선택)")
 
-    from core.upload import is_authenticated
-    if is_authenticated():
-        st.success("YouTube ✅ 인증됨")
-    else:
-        st.warning("YouTube — 미인증 (credentials.json 필요)")
+    try:
+        from core.upload import is_authenticated
+        if is_authenticated():
+            st.success("YouTube ✅ 인증됨")
+        else:
+            st.warning("YouTube — 미인증 (선택)")
+    except Exception:
+        st.warning("YouTube — 미인증 (선택)")
 
     st.divider()
     st.markdown("**무료 한도 (일별)**")
